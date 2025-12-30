@@ -1,0 +1,6 @@
+flask
+numpy
+pillow
+ultralytics
+torch
+torchvision

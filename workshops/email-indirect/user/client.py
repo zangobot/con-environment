@@ -1,15 +1,16 @@
 import threading
 import smtplib
+import os
 from email.message import EmailMessage
 from flask import Flask, render_template_string, request, redirect, url_for
 from aiosmtpd.controller import Controller
 import asyncio
 
 # --- CONFIGURATION ---
-CHALLENGE_SERVER_HOST = 'ctf-email-service' # K8s DNS name of the server
-CHALLENGE_SERVER_PORT = 25
-MY_LISTEN_PORT = 25  # Must capture replies on port 25
-WEB_PORT = 5000
+CHALLENGE_SERVER_HOST = os.environ("CHALLENGE_SERVER_HOST", 'ctf-email-service') # K8s DNS name of the server
+CHALLENGE_SERVER_PORT = os.environ("CHALLENGE_SERVER_PORT", 25)
+MY_LISTEN_PORT = os.environ("MY_LISTEN_PORT", 25)  # Must capture replies on port 25
+WEB_PORT = os.environ("WEB_PORT", 5000)
 
 # --- GLOBAL STORE ---
 # In a real app, use a DB. For a CTF container, memory is fine.
