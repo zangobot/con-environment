@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-download the YOLO model so players don't wait
-RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
+RUN python -c "from ultralytics import YOLO; YOLO('YOLO11n-cls.pt')"
 
 # Copy challenge assets
 COPY source_image.jpg .

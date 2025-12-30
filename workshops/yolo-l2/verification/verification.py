@@ -14,7 +14,7 @@ ORIGINAL_CLASS_ID = os.environ("ORIGINAL_CLASS_ID", 0)
 
 # Load resources once on startup
 print("Loading Model and Reference Image...")
-model = YOLO("yolov8n.pt") 
+model = YOLO("YOLO11n-cls.pt") 
 ref_img = Image.open(SOURCE_IMAGE_PATH).convert("RGB")
 REF_IMG_ARRAY = np.array(ref_img, dtype=np.float32)
 REF_SHAPE = REF_IMG_ARRAY.shape
