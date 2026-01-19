@@ -127,10 +127,10 @@ async fn main() {
         .unwrap();
 }
 
-// #[cfg(test)]
-// mod tests {
-//     pub mod gc;
-//     pub mod helpers;
-//     pub mod config;
-//     pub mod integration;
-// }
+#[cfg(test)]
+mod tests {
+    pub mod gc;
+    pub mod helpers;
+    pub mod config;
+    pub mod integration;
+}

@@ -168,9 +168,9 @@ fn create_workshop_pod_spec(
                 // This is a placeholder. Put your actual container here.
                 {
                     "name": "workshop",
-                    "image": config.workshop_image, // <-- Configurable
+                    "image": config.workshop_image,
                     "imagePullPolicy": "Always",
-                    "ports": [{"containerPort": config.workshop_port}], // <-- Configurable
+                    "ports": [{"containerPort": config.workshop_port}],
                     "resources": {
                         "requests": {
                             "cpu": config.workshop_cpu_request,
@@ -194,7 +194,7 @@ fn create_workshop_pod_spec(
                         // pingora proxy
                         {"name": "SIDECAR_TCP_LISTEN", "value": "0.0.0.0:8888"},
                         // Proxy target: the workshop container
-                        {"name": "SIDECAR_TARGET_TCP", "value": "127.0.0.1:8080"} // <-- Configurable
+                        {"name": "SIDECAR_TARGET_TCP", "value": "127.0.0.1:8080"}
                     ],
                     "ports": [
                         {"name": "health", "containerPort": 9000},

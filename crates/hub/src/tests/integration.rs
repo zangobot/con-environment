@@ -86,7 +86,8 @@ fn test_jwt_token_generation_and_validation() {
     use jsonwebtoken::{encode, decode, Header, Validation};
     
     let keys = auth::AuthKeys::new(b"test-secret");
-    
+        let iat = Utc::now();
+    let expiration = Utc::now() + Duration::hours(24);
     // Create test claims
     let claims = auth::Claims {
         sub: "testuser".to_string(),

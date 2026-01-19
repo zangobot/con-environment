@@ -10,6 +10,7 @@ let
   startCommand = [
         "docker"
         "run"
+        "--dns" "8.8.8.8"
         "--rm" # Use --rm to auto-clean on stop
         "-p" "${toString config.localPort}:5000"
         "-e" "REGISTRY_PROXY_REMOTEURL=${config.remoteUrl}"

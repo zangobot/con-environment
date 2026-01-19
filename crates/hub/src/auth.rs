@@ -7,7 +7,6 @@ use axum::{
 use futures_util::future::BoxFuture;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, trace};
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
 use tower_cookies::{Cookie, Cookies};
@@ -17,10 +16,11 @@ const JWT_SECRET: &[u8] = b"your-secret-key-change-in-production"; // TODO: Load
 const COOKIE_NAME: &str = "workshop_token";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Claims {
-    sub: String, // user_id
-    username: String,
-    exp: i64,
+pub struct Claims {
+    pub sub: String, // user_id
+    pub username: String,
+    pub exp: i64,
+    pub iat: i64,
 }
 
 // Login/logout routes
@@ -65,11 +65,13 @@ async fn handle_login(
     
     let user_id = format!("user-{}", sanitize_username(&login_req.username));
     
+    let iat = Utc::now();
     let expiration = Utc::now() + Duration::hours(24);
     let claims = Claims {
         sub: user_id.clone(),
         username: login_req.username.clone(),
         exp: expiration.timestamp(),
+        iat: iat.timestamp(),
     };
     
     tracing::debug!(

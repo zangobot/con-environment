@@ -5,10 +5,7 @@ let
   inherit (inputs) nix-kube-generators;
   kubelib = nix-kube-generators.lib { inherit pkgs; };
 
-  rustToolchain = with fenix.packages.${system}; combine [ 
-    stable.toolchain
-    targets.wasm32-unknown-unknown.stable.rust-std
-  ];
+  rustToolchain = fenix.packages.${system}.stable.toolchain;
 
   # Common preamble for all scripts
   scriptPreamble = ''
@@ -197,7 +194,6 @@ in
       inputs.services-flake.processComposeModules.default
       (multiService ./dev_shell/tilt.nix)
       (multiService ./dev_shell/local_path_storage.nix)
-      (multiService ./dev_shell/ceph.nix)
       (multiService ./dev_shell/talos.nix)
       (multiService ./dev_shell/patches.nix)
       (multiService ./dev_shell/container_repository.nix)
@@ -268,19 +264,11 @@ in
           ];
           # This is defined in the .envrc. These can't be paths as they're not checked in.
           configPatches = [
-            #".data/talos-patches/cilium.yaml"
+            ".data/talos-patches/cilium.yaml"
             ".data/talos-patches/ghcr.yaml"
           ];
         };
       };
-
-      # Virtual cluster doesn't handle ceph well.
-
-      # ceph."storage" = {
-      #   enable = true;
-      #   kubeconfig = ".data/talos/kubeconfig";
-      #   configDir = ../setup/k8/rook-ceph;
-      # };
 
       local_path_storage."storage" = {
         enable = true;
