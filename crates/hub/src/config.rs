@@ -1,4 +1,7 @@
+use std::path::Path;
+
 use serde::Deserialize;
+use tracing::{debug, info};
 
 /// Top-level configuration loaded from environment variables.
 #[derive(Deserialize, Debug, Clone)]
@@ -55,6 +58,10 @@ pub struct Config {
     /// Workshop container memory limit.
     #[serde(default = "default_workshop_mem_limit")]
     pub workshop_mem_limit: String,
+
+    /// Workshop container memory limit.
+    #[serde(default = "default_garbarge_collection_seconds")]
+    pub garbarge_collection_seconds: i64,
 }
 
 fn default_workshop_name() -> String {
@@ -98,6 +105,9 @@ fn default_workshop_mem_request() -> String {
 fn default_workshop_mem_limit() -> String {
     "512Mi".to_string()
 }
+fn default_garbarge_collection_seconds() -> i64 {
+    300
+}
 
 /// The annotation key we use to store the expiration time on a pod.
 pub const TTL_ANNOTATION: &str = "workshop-hub/ttl-expires-at";
@@ -106,7 +116,53 @@ pub const LABEL_WORKSHOP_NAME: &str = "workshop-hub/workshop-name";
 
 impl Config {
     /// Loads configuration from environment variables.
-    pub fn from_env() -> Result<Self, envy::Error> {
-        envy::prefixed("HUB_").from_env::<Config>()
+    pub fn from_env() -> Self {
+        if let Ok(path_str) = std::env::var("WORKSHOP_CONFIG") {
+            let path = Path::new(&path_str);
+            if path.exists() {
+                info!(
+                    "Loading workshop config from WORKSHOP_CONFIG path: {:?}",
+                    path
+                );
+                return Self::from_yaml_file(path);
+            } else {
+                panic!(
+                    "WORKSHOP_CONFIG environment variable set to {:?}, but file does not exist.",
+                    path
+                );
+            }
+        }
+
+        // 2. Check for sensible default file locations (Container friendly)
+        let default_paths = [
+            "workshop.yaml",
+            "/app/config/workshop.yaml",
+            "/etc/workshop/config.yaml",
+        ];
+
+        for path_str in default_paths {
+            let path = Path::new(path_str);
+            if path.exists() {
+                info!("Found config file at default location: {:?}", path);
+                return Self::from_yaml_file(path);
+            }
+        }
+
+        panic!("Unable to find workshop config file. Checked WORKSHOP_CONFIG env var and default paths: workshop.yaml, /app/config/workshop.yaml, /etc/workshop/config.yaml");
+
+    }
+
+    pub fn from_yaml_file(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref();
+        info!("Loading pyroduct config from YAML file: {:?}", path);
+
+        let contents = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("Failed to read pyroduct config file {:?}: {}", path, e));
+
+        let config: Self = serde_yaml::from_str(&contents)
+            .unwrap_or_else(|e| panic!("Failed to parse pyroduct YAML config: {}", e));
+
+        debug!("Loaded pyroduct config: {:?}", config);
+        config
     }
 }

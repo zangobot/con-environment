@@ -197,7 +197,7 @@ impl BackgroundService for GarbageCollector {
             &self.config.workshop_namespace,
         );
 
-        let mut interval = tokio::time::interval(Duration::from_secs(300)); // Every 5 mins
+        let mut interval = tokio::time::interval(Duration::from_secs(self.config.garbarge_collection_seconds as u64)); // Every 5 mins
         loop {
             interval.tick().await;
             tracing::info!("GC: Running cleanup...");

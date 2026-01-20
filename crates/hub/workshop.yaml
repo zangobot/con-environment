@@ -118,23 +118,17 @@ spec:
   endpointSelector: {}
   ingress:
     # Allow traffic from hub namespace
-    - fromEndpoints:
+    - fromNamespaces:
+        - workshop-hub-system
+      fromEndpoints:
         - matchLabels:
-            io.kubernetes.pod.namespace: workshop-hub-system
             app: workshop-hub
       toPorts:
         - ports:
-            - port: "80"
+            - port: "8888"
               protocol: TCP
             - port: "9000"
               protocol: TCP
-            - port: "8888"
-              protocol: TCP
-    
-    # Allow traffic from within workshops namespace (pod-to-pod)
-    - fromEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: workshop
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -267,26 +261,22 @@ data:
   # Core configuration
   workshop-name: "test-workshop"
   workshop-namespace: "workshop"
-  hub-namespace: "workshop-hub-system"
-  
-  # Workshop pod configuration
-  workshop-image: "traefik/whoami"
-  workshop-port: "8080"
-  workshop-ttl-seconds: "3600"
-  workshop-idle-seconds: "600"
-  workshop-pod-limit: "10"
-  
-  # Resource limits for workshop pods
-  workshop-cpu-request: "1.0"
-  workshop-cpu-limit: "2.0"
-  workshop-mem-request: "1Gi"
-  workshop-mem-limit: "2Gi"
-  
-  # Sidecar configuration
-  sidecar-image: "ghcr.io/nbhdai/workshop-sidecar:latest"
-  sidecar-upstream-port: "8080"
-  sidecar-proxy-port: "8888"
-  sidecar-health-port: "9000"
+  config.yaml: |
+    workshop_name: "test-workshop"
+    workshop_namespace: "workshop"
+    workshop_ttl_seconds: 3600
+    workshop_idle_seconds: 600
+    workshop_image: "traefik/whoami"
+    workshop_port: 8080
+    sidecar_proxy_port: 8888
+    sidecar_health_port: 9000
+    workshop_pod_limit: 10
+    workshop_cpu_request: "1.0"
+    workshop_cpu_limit: "2.0"
+    workshop_mem_request: "1Gi"
+    workshop_mem_limit: "2Gi"
+    sidecar_image: "ghcr.io/nbhdai/workshop-sidecar:latest"
+    garbarge_collection_seconds: 30
 ---
 apiVersion: v1
 kind: Secret
@@ -355,72 +345,14 @@ spec:
             # Logging
             - name: RUST_LOG
               value: "trace,tower_http=debug,tower=info,fred=debug,h2=off,hyper=off,sqlx=off,tarpc=off,rustls=off"
-            
-            # Workshop Config - All pulled from ConfigMap
-            - name: HUB_WORKSHOP_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-name
-            - name: HUB_WORKSHOP_NAMESPACE
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-namespace
-            - name: HUB_WORKSHOP_TTL_SECONDS
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-ttl-seconds
-            - name: HUB_WORKSHOP_IDLE_SECONDS
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-idle-seconds
-            - name: HUB_WORKSHOP_POD_LIMIT
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-pod-limit
-            
-            # User Container Config - All pulled from ConfigMap
-            - name: HUB_WORKSHOP_IMAGE
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-image
-            - name: HUB_WORKSHOP_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-port
-            - name: HUB_WORKSHOP_CPU_REQUEST
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-cpu-request
-            - name: HUB_WORKSHOP_CPU_LIMIT
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-cpu-limit
-            - name: HUB_WORKSHOP_MEM_REQUEST
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-mem-request
-            - name: HUB_WORKSHOP_MEM_LIMIT
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: workshop-mem-limit
-            
-            # Sidecar Config - Pulled from ConfigMap
-            - name: HUB_WORKSHOP_SIDECAR_IMAGE
-              valueFrom:
-                configMapKeyRef:
-                  name: workshop-hub-config
-                  key: sidecar-image
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/workshop/config.yaml
+              subPath: config.yaml
+      volumes:
+        - name: config-volume
+          configMap:
+            name: workshop-hub-config
 ---
 apiVersion: v1
 kind: Service

@@ -52,7 +52,7 @@ pub async fn get_or_create_pod(user_id: &str, config: Arc<Config>) -> Result<Pod
             return Ok(PodBinding {
                 pod_name: pod_name.to_string(),
                 service_name: service_name.clone(),
-                cluster_dns_name: format!("{}.{}.svc.cluster.local", service_name, namespace),
+                cluster_dns_name: format!("{}.{}.svc.cluster.local:{}", service_name, namespace, config.sidecar_proxy_port),
             });
         }
     }
@@ -104,7 +104,7 @@ pub async fn get_or_create_pod(user_id: &str, config: Arc<Config>) -> Result<Pod
 
     // Create the Service
     let svc =
-        create_workshop_service_spec(&service_name, &pod_name, user_id, workshop_name, owner_ref);
+        create_workshop_service_spec(&service_name, &pod_name, user_id, workshop_name, owner_ref, &config);
     svc_api.create(&PostParams::default(), &svc).await?;
     info!("Created service {}", service_name);
 
@@ -230,6 +230,7 @@ fn create_workshop_service_spec(
     user_id: &str,
     workshop_name: &str,
     owner_ref: OwnerReference,
+    config: &Config,
 ) -> Service {
     let mut labels = BTreeMap::new();
     labels.insert(LABEL_USER_ID.to_string(), user_id.to_string());
@@ -257,14 +258,14 @@ fn create_workshop_service_spec(
                     // This is the main port the Hub connects to.
                     // It points to the sidecar's proxy.
                     "name": "proxy",
-                    "port": 8888, // The Service port
-                    "targetPort": 8888 // The sidecar's `SIDECAR_TCP_LISTEN` port
+                    "port": config.sidecar_proxy_port, 
+                    "targetPort": config.sidecar_proxy_port // The sidecar's `SIDECAR_TCP_LISTEN` port
                 },
                 {
                     // This is the port for the GC health check.
                     "name": "health",
-                    "port": 8080,
-                    "targetPort": 8080 // The sidecar's `SIDECAR_HTTP_LISTEN` port
+                    "port":  config.sidecar_health_port,
+                    "targetPort":  config.sidecar_health_port // The sidecar's `SIDECAR_HTTP_LISTEN` port
                 }
             ]
         }

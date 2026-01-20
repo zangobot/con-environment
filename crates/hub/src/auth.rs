@@ -4,7 +4,7 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use serde::{Deserialize, Serialize};
 use tower_cookies::{Cookie, Cookies};
 
-pub const JWT_SECRET: &[u8] = b"your-secret-key-change-in-production"; // TODO: Load from env
+pub const JWT_SECRET: &[u8] = b"this-is-just-meant-to-reliably-segment-you-from-other-friendlies-known-not-secure";
 pub const COOKIE_NAME: &str = "workshop_token";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

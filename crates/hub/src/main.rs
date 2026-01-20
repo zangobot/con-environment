@@ -26,7 +26,7 @@ pub static SIDECAR: &'static str = "ghcr.io/nbhdai/workshop-sidecar:latest";
 
 fn main() {
     tracing_subscriber::fmt::init();
-    let config = Arc::new(config::Config::from_env().expect("Failed to load config from env"));
+    let config = Arc::new(config::Config::from_env());
 
     tracing::info!("Config loaded: {:?}", config);
 

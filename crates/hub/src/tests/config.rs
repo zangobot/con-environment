@@ -35,6 +35,7 @@ pub fn get_test_config() -> Arc<Config> {
         workshop_mem_limit: "256Mi".to_string(),
         sidecar_health_port: 9000,
         sidecar_proxy_port: 8888,
+        garbarge_collection_seconds: 300,
     })
 }
 
@@ -54,5 +55,6 @@ pub fn get_gc_test_config() -> Arc<Config> {
         workshop_mem_limit: "128Mi".to_string(),
         sidecar_health_port: 9000,
         sidecar_proxy_port: 8888,
+        garbarge_collection_seconds: 300,
     })
 }
