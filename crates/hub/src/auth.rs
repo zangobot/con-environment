@@ -1,12 +1,8 @@
-use axum::{
-    response::IntoResponse,
-    routing::get,
-    Json, Router,
-};
+use axum::{response::IntoResponse, routing::get, Json, Router};
+use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use tower_cookies::{Cookie, Cookies};
-use chrono::{Duration, Utc};
 
 pub const JWT_SECRET: &[u8] = b"your-secret-key-change-in-production"; // TODO: Load from env
 pub const COOKIE_NAME: &str = "workshop_token";
@@ -36,9 +32,8 @@ fn sanitize_username(username: &str) -> String {
 }
 
 // Login/logout routes
-pub fn auth_routes() -> Router<crate::AppState> {
-    Router::new()
-        .route("/login", get(login_page))
+pub fn auth_routes() -> Router<()> {
+    Router::new().route("/login", get(login_page))
 }
 
 // Login page handler - serves HTML form
@@ -67,15 +62,15 @@ pub async fn handle_login(
         "🔐 Login attempt for username: '{}' from IP: [extract from request if available]",
         login_req.username
     );
-    
+
     // Check if there's already a cookie
     if let Some(_) = cookies.get(COOKIE_NAME) {
         tracing::debug!("Found existing cookie during login, will be replaced");
         cookies.remove(Cookie::from(COOKIE_NAME));
     }
-    
+
     let user_id = format!("user-{}", sanitize_username(&login_req.username));
-    
+
     let iat = Utc::now();
     let expiration = Utc::now() + Duration::hours(24);
     let claims = Claims {
@@ -84,13 +79,13 @@ pub async fn handle_login(
         exp: expiration.timestamp(),
         iat: iat.timestamp(),
     };
-    
+
     tracing::debug!(
         "Creating JWT for user_id: {}, expires at: {}",
         user_id,
         expiration
     );
-    
+
     let token = match encode(
         &Header::default(),
         &claims,
@@ -109,22 +104,22 @@ pub async fn handle_login(
             });
         }
     };
-    
+
     let mut cookie = Cookie::new(COOKIE_NAME, token);
     cookie.set_http_only(true);
     cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
     cookie.set_path("/");
     cookie.set_max_age(tower_cookies::cookie::time::Duration::hours(24));
-    
+
     tracing::debug!("Setting cookie with max_age: 24 hours");
     cookies.add(cookie);
-    
+
     tracing::info!(
         "✅ Login successful - user_id: {}, username: {}",
         user_id,
         login_req.username
     );
-    
+
     Json(LoginResponse {
         success: true,
         message: "Login successful".to_string(),

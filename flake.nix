@@ -82,6 +82,7 @@
           commonNativeBuildInputs = with pkgs; [
             pkg-config
             openssl
+            cmake
           ];
 
           binaries = {

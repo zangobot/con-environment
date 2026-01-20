@@ -1,12 +1,10 @@
+use crate::{auth, config::Config, orchestrator, HubError};
 use async_trait::async_trait;
 use axum::http::Uri;
-use pingora::{prelude::*};
+use pingora::prelude::*;
 use std::sync::Arc;
-use kube::Client;
-use crate::{HubError, auth, config::Config, orchestrator};
 
 pub struct WorkshopProxy {
-    pub kube_client: Client,
     pub config: Arc<Config>,
 }
 
@@ -14,8 +12,10 @@ pub struct WorkshopProxy {
 impl ProxyHttp for WorkshopProxy {
     type CTX = ();
 
-    fn new_ctx(&self) -> Self::CTX { () }
-    
+    fn new_ctx(&self) -> Self::CTX {
+        ()
+    }
+
     async fn upstream_peer(
         &self,
         session: &mut Session,
@@ -28,7 +28,7 @@ impl ProxyHttp for WorkshopProxy {
             .map(|v| v.to_str().unwrap_or_default())
             .unwrap_or_default();
         let local_path = if let Some(user) = auth::validate_cookie(cookie_header) {
-            match orchestrator::get_or_create_pod(&self.kube_client, &user.user_id, self.config.clone()).await {
+            match orchestrator::get_or_create_pod(&user.user_id, self.config.clone()).await {
                 Ok(binding) => {
                     let peer = Box::new(HttpPeer::new(
                         binding.cluster_dns_name,
@@ -36,7 +36,7 @@ impl ProxyHttp for WorkshopProxy {
                         String::new(),
                     ));
                     return Ok(peer);
-                },
+                }
                 Err(HubError::PodLimitReached) => "/aiv-workshop-at-capacity",
                 Err(HubError::PodNotReady) => "/aiv-workshop-pending",
                 Err(HubError::KubeError(e)) => {
@@ -47,18 +47,14 @@ impl ProxyHttp for WorkshopProxy {
         } else {
             "/login"
         };
-        
 
-        session.req_header_mut().set_uri(Uri::from_static(local_path));
-
+        session
+            .req_header_mut()
+            .set_uri(Uri::from_static(local_path));
 
         // 5. PROXY TO LOCAL AXUM
         // Instead of failing, we successfully proxy to our internal UI
-        let peer = Box::new(HttpPeer::new(
-            "127.0.0.1:3000", 
-            false,
-            String::new(),
-        ));
+        let peer = Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new()));
         Ok(peer)
     }
 }

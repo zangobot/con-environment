@@ -55,9 +55,7 @@ fn current_timestamp() -> i64 {
 async fn main() {
     tracing_subscriber::registry()
         .with(fmt::layer().with_target(true))
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            "trace,rustls=off".into()
-        }))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "trace,rustls=off".into()))
         .init();
 
     info!("Starting workshop sidecar...");

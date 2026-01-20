@@ -4,7 +4,6 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
 use kube::{
     api::{Api, DeleteParams, ListParams, PostParams},
     runtime::wait::{await_condition, conditions},
-    Client,
 };
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -19,6 +18,7 @@ const LABEL_MANAGED_BY: &str = "app.kubernetes.io/managed-by";
 const HUB_ID: &str = "workshop-hub";
 
 /// A struct to hold the pod and its stable service name.
+#[allow(unused)]
 #[derive(Clone, Debug)]
 pub struct PodBinding {
     pub pod_name: String,
@@ -29,11 +29,8 @@ pub struct PodBinding {
 
 /// Finds an existing pod for a user, or creates one.
 /// This is the core "get or create" logic.
-pub async fn get_or_create_pod(
-    client: &Client,
-    user_id: &str,
-    config: Arc<Config>,
-) -> Result<PodBinding, HubError> {
+pub async fn get_or_create_pod(user_id: &str, config: Arc<Config>) -> Result<PodBinding, HubError> {
+    let client = crate::kube_client().await;
     let namespace = &config.workshop_namespace;
     let workshop_name = &config.workshop_name;
 
@@ -180,7 +177,7 @@ fn create_workshop_pod_spec(
                 // --- 2. The Sidecar Container ---
                 {
                     "name": "sidecar",
-                    "image": crate::SIDECAR, 
+                    "image": crate::SIDECAR,
                     "imagePullPolicy": "Always",
                     "env": [
                         {"name": "SIDECAR_HTTP_LISTEN", "value": "0.0.0.0:9000"},

@@ -1,13 +1,12 @@
-
-use std::sync::Arc;
 use crate::config::Config;
+use std::sync::Arc;
 
 /// Validates that we're running in the correct test environment
 pub fn validate_talos_environment() -> Result<(), String> {
     // Check for KUBECONFIG
     let kubeconfig = std::env::var("KUBECONFIG")
         .map_err(|_| "KUBECONFIG not set. Please run: export KUBECONFIG=~/.kube/config")?;
-    
+
     // Check if it points to a Talos config
     if !kubeconfig.contains("talos") && !kubeconfig.contains("test") {
         return Err(format!(
@@ -16,7 +15,7 @@ pub fn validate_talos_environment() -> Result<(), String> {
             kubeconfig
         ));
     }
-    
+
     Ok(())
 }
 
@@ -24,9 +23,9 @@ pub fn validate_talos_environment() -> Result<(), String> {
 pub fn get_test_config() -> Arc<Config> {
     Arc::new(Config {
         workshop_name: "test-workshop".to_string(),
-        workshop_namespace: "test-workshops".to_string(),  // Cross-namespace: workshops go here
-        workshop_ttl_seconds: 600,      // 10 minutes
-        workshop_idle_seconds: 120,     // 2 minutes
+        workshop_namespace: "test-workshops".to_string(), // Cross-namespace: workshops go here
+        workshop_ttl_seconds: 600,                        // 10 minutes
+        workshop_idle_seconds: 120,                       // 2 minutes
         workshop_image: "nginxdemos/hello".to_string(),
         workshop_port: 80,
         workshop_pod_limit: 10,
@@ -41,9 +40,9 @@ pub fn get_test_config() -> Arc<Config> {
 pub fn get_gc_test_config() -> Arc<Config> {
     Arc::new(Config {
         workshop_name: "gc-test-workshop".to_string(),
-        workshop_namespace: "test-workshops".to_string(),  // Cross-namespace
-        workshop_ttl_seconds: 30,       // 30 seconds for quick TTL testing
-        workshop_idle_seconds: 10,      // 10 seconds for quick idle testing
+        workshop_namespace: "test-workshops".to_string(), // Cross-namespace
+        workshop_ttl_seconds: 30,                         // 30 seconds for quick TTL testing
+        workshop_idle_seconds: 10,                        // 10 seconds for quick idle testing
         workshop_image: "nginxdemos/hello".to_string(),
         workshop_port: 80,
         workshop_pod_limit: 5,

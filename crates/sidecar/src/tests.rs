@@ -9,7 +9,7 @@ async fn mock_upstream_server(port: u16) {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
         .await
         .unwrap();
-    
+
     loop {
         if let Ok((mut socket, _)) = listener.accept().await {
             tokio::spawn(async move {
@@ -84,16 +84,16 @@ async fn test_sidecar_end_to_end() {
         .expect("Health check should succeed");
 
     assert_eq!(resp.status(), 200, "Health endpoint should return 200");
-    
+
     let health: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(health["status"], "ok");
-    
+
     let initial_idle = health["idle_seconds"].as_u64().unwrap();
     let initial_timestamp = health["last_activity_timestamp"].as_i64().unwrap();
-    
+
     println!("Initial idle_seconds: {}", initial_idle);
     println!("Initial timestamp: {}", initial_timestamp);
-    
+
     assert!(
         initial_idle <= 1,
         "Initial idle should be 0-1 seconds, got {}",
@@ -110,12 +110,12 @@ async fn test_sidecar_end_to_end() {
         .send()
         .await
         .unwrap();
-    
+
     let health: serde_json::Value = resp.json().await.unwrap();
     let idle_after_wait = health["idle_seconds"].as_u64().unwrap();
-    
+
     println!("Idle seconds after 3s wait: {}", idle_after_wait);
-    
+
     assert!(
         idle_after_wait >= 3,
         "After waiting 3 seconds, idle should be at least 3, got {}",
@@ -140,11 +140,7 @@ async fn test_sidecar_end_to_end() {
         .await
         .expect("Should read from proxy");
 
-    assert_eq!(
-        &response,
-        test_message,
-        "Should receive echoed message"
-    );
+    assert_eq!(&response, test_message, "Should receive echoed message");
 
     println!("Proxy traffic successful!");
 
@@ -157,14 +153,14 @@ async fn test_sidecar_end_to_end() {
         .send()
         .await
         .unwrap();
-    
+
     let health: serde_json::Value = resp.json().await.unwrap();
     let idle_after_activity = health["idle_seconds"].as_u64().unwrap();
     let timestamp_after_activity = health["last_activity_timestamp"].as_i64().unwrap();
-    
+
     println!("Idle seconds after proxy activity: {}", idle_after_activity);
     println!("Timestamp after activity: {}", timestamp_after_activity);
-    
+
     assert!(
         idle_after_activity <= 1,
         "After proxy activity, idle should be 0-1 seconds, got {}",
@@ -180,29 +176,29 @@ async fn test_sidecar_end_to_end() {
 
     // Step 11: Verify continuous activity tracking
     println!("Testing continuous activity tracking...");
-    
+
     // Send multiple messages with delays
     for i in 0..3 {
         sleep(Duration::from_secs(1)).await;
-        
+
         let msg = format!("Message {}", i);
         proxy_client.write_all(msg.as_bytes()).await.unwrap();
-        
+
         let mut buf = vec![0u8; msg.len()];
         proxy_client.read_exact(&mut buf).await.unwrap();
-        
+
         // Check health - should stay low
         let resp = client
             .get("http://127.0.0.1:18080/health")
             .send()
             .await
             .unwrap();
-        
+
         let health: serde_json::Value = resp.json().await.unwrap();
         let idle = health["idle_seconds"].as_u64().unwrap();
-        
+
         println!("Idle after message {}: {}s", i, idle);
-        
+
         assert!(
             idle <= 2,
             "During activity, idle should stay low, got {}",
@@ -216,7 +212,7 @@ async fn test_sidecar_end_to_end() {
 #[tokio::test]
 async fn test_sidecar_with_no_activity() {
     // Test that idle time increases when there's no activity
-    
+
     let upstream_port = 19002;
     tokio::spawn(mock_upstream_server(upstream_port));
     sleep(Duration::from_millis(100)).await;
@@ -249,31 +245,34 @@ async fn test_sidecar_with_no_activity() {
 
     // Check idle time increases over several checks
     let mut last_idle = 0;
-    
+
     for i in 0..5 {
         sleep(Duration::from_secs(1)).await;
-        
+
         let resp = client
             .get("http://127.0.0.1:18081/health")
             .send()
             .await
             .unwrap();
-        
+
         let health: serde_json::Value = resp.json().await.unwrap();
         let idle = health["idle_seconds"].as_u64().unwrap();
-        
+
         println!("Check {}: idle = {}s", i, idle);
-        
+
         assert!(
             idle >= last_idle,
             "Idle time should increase or stay same, was {} now {}",
             last_idle,
             idle
         );
-        
+
         last_idle = idle;
     }
 
     println!("✓ No-activity test passed! Final idle: {}s", last_idle);
-    assert!(last_idle >= 4, "After 5 seconds, should be at least 4s idle");
+    assert!(
+        last_idle >= 4,
+        "After 5 seconds, should be at least 4s idle"
+    );
 }
