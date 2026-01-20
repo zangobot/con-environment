@@ -7,131 +7,43 @@ let
 
   rustToolchain = fenix.packages.${system}.stable.toolchain;
 
-  # Common preamble for all scripts
-  scriptPreamble = ''
-    #!/usr/bin/env bash
-    set -euo pipefail # Exit on error, unset variables, and pipe failures
-    
-    # This script assumes it's run from within the dev shell.
-    # The shellHook is expected to have already set:
-    # - GITHUB_USERNAME (from .envhost)
-    # - PROJECT_ROOT
-    # - And already run `docker login` for ghcr.io
+  mkContainerScripts = import ./container_scripts.nix { 
+    inherit pkgs; 
+  };
 
-    if [[ -z "''${PROJECT_ROOT:-}" ]]; then
-      echo "Error: PROJECT_ROOT is not set. Are you in the dev shell?"
-      exit 1
-    fi
-  '';
+  # --- DEFINE YOUR CONFIG ---
+  # Just add new items here!
+  myContainerScripts = mkContainerScripts [
+    # Standard Dockerfile builds (type="docker" is default)
+    {
+      name = "yolo-l2-notebook";
+      path = "workshops/yolo-l2/notebook";
+    }
+    {
+      name = "yolo-l2-verification";
+      path = "workshops/yolo-l2/verification";
+    }
+    {
+      name = "email-indirect-service";
+      path = "workshops/email-indirect/service";
+    }
+    {
+      name = "email-indirect-user";
+      path = "workshops/email-indirect/user";
+    }
 
-  # --- Script 1: Upload workshop-sidecar (Nix build) ---
-  uploadSidecarScript = pkgs.writeShellScriptBin "upload-workshop-sidecar" ''
-    ${scriptPreamble}
-    
-    nix_pkg="workshop-sidecar"
-    docker_name="workshop-sidecar"
-    
-    local_tag="''${docker_name}:latest"
-    remote_tag="ghcr.io/nbhdai/''${docker_name}:latest"
-    result_link="result-''${nix_pkg}" # Unique out-link for the build
-
-    echo "--- Processing image: ''${docker_name} ---"
-    
-    echo "Building ''${nix_pkg}..."
-    nix build "''${PROJECT_ROOT}#''${nix_pkg}" --out-link "''${result_link}"
-    
-    echo "Loading ''${local_tag} into Docker..."
-    docker load < "''${result_link}"
-    
-    echo "Tagging ''${local_tag} as ''${remote_tag}..."
-    docker tag "''${local_tag}" "''${remote_tag}"
-    
-    echo "Pushing ''${remote_tag}..."
-    docker push "''${remote_tag}"
-    
-    rm "''${result_link}"
-    echo "Successfully pushed ''${remote_tag}"
-    echo "-----------------------------------"
-  '';
-
-  # --- Script 2: Upload workshop-hub (Nix build) ---
-  uploadHubScript = pkgs.writeShellScriptBin "upload-workshop-hub" ''
-    ${scriptPreamble}
-    
-    nix_pkg="workshop-hub"
-    docker_name="workshop-hub"
-    
-    local_tag="''${docker_name}:latest"
-    remote_tag="ghcr.io/nbhdai/''${docker_name}:latest"
-    result_link="result-''${nix_pkg}"
-
-    echo "--- Processing image: ''${docker_name} ---"
-    
-    echo "Building ''${nix_pkg}..."
-    nix build "''${PROJECT_ROOT}#''${nix_pkg}" --out-link "''${result_link}"
-    
-    echo "Loading ''${local_tag} into Docker..."
-    docker load < "''${result_link}"
-    
-    echo "Tagging ''${local_tag} as ''${remote_tag}..."
-    docker tag "''${local_tag}" "''${remote_tag}"
-    
-    echo "Pushing ''${remote_tag}..."
-    docker push "''${remote_tag}"
-    
-    rm "''${result_link}"
-    echo "Successfully pushed ''${remote_tag}"
-    echo "-----------------------------------"
-  '';
-
-  # --- Script 3: Upload workshop-inspect-basic (Dockerfile build) ---
-  uploadInspectScript = pkgs.writeShellScriptBin "upload-workshop-inspect-basic" ''
-    ${scriptPreamble}
-
-    echo "--- Processing image: workshop-inspect-basic ---"
-    
-    INSPECT_LOCAL_TAG="workshop-inspect-basic:latest"
-    INSPECT_REMOTE_TAG="ghcr.io/nbhdai/workshop-inspect-basic:latest"
-    INSPECT_CONTEXT_PATH="$PROJECT_ROOT/workshops/inspect-basic"
-
-    echo "Building $INSPECT_LOCAL_TAG from $INSPECT_CONTEXT_PATH..."
-    docker build -t "$INSPECT_LOCAL_TAG" "$INSPECT_CONTEXT_PATH"
-    
-    echo "Tagging $INSPECT_LOCAL_TAG as $INSPECT_REMOTE_TAG..."
-    docker tag "$INSPECT_LOCAL_TAG" "$INSPECT_REMOTE_TAG"
-    
-    echo "Pushing $INSPECT_REMOTE_TAG..."
-    docker push "$INSPECT_REMOTE_TAG"
-    
-    echo "Successfully pushed $INSPECT_REMOTE_TAG"
-    echo "-----------------------------------"
-  '';
-
-  # --- Script 4: Complete script to run all 3 ---
-  uploadAllScript = pkgs.writeShellScriptBin "upload-all-images" ''
-    #!/usr/bin/env bash
-    set -euo pipefail
-    
-    echo "=== 🚀 Starting upload for all images... ==="
-    
-    # These scripts are on the PATH from the dev shell's 'packages'
-    
-    echo ""
-    echo "Running upload-workshop-sidecar..."
-    upload-workshop-sidecar
-    
-    echo ""
-    echo "Running upload-workshop-hub..."
-    upload-workshop-hub
-    
-    echo ""
-    echo "Running upload-workshop-inspect-basic..."
-    upload-workshop-inspect-basic
-    
-    echo ""
-    echo "=== ✅ All images pushed successfully! ==="
-  '';
-
+    # Nix builds - core components
+    { 
+      name = "workshop-sidecar"; 
+      path = "workshop-sidecar"; 
+      type = "nix"; 
+    }
+    { 
+      name = "workshop-hub"; 
+      path = "workshop-hub"; 
+      type = "nix"; 
+    }
+  ];
 
   cliTools = with pkgs; [
     curl
@@ -149,7 +61,7 @@ let
     uploadHubScript
     uploadInspectScript
     uploadAllScript
-  ] ++ [ rustToolchain ];
+  ] ++ myContainerScripts ++ [ rustToolchain ];
 in
 {
   shell = 
