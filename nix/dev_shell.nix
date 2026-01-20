@@ -56,11 +56,6 @@ let
     k9s
     cilium-cli
     hubble
-    # Replaced uploadScript with the new individual and composite scripts
-    uploadSidecarScript
-    uploadHubScript
-    uploadInspectScript
-    uploadAllScript
   ] ++ myContainerScripts ++ [ rustToolchain ];
 in
 {
@@ -84,10 +79,16 @@ in
         # Set up environment variables
         export PROJECT_ROOT=$PWD
         export DATA_DIR="$PROJECT_ROOT/.data"
-        echo "Writing .env file..."
-        cat > .env <<EOF
-        ${dotenv}
-        EOF
+
+        if [ -f .envhost ]; then
+          set -a
+          source .envhost
+          set +a
+          if [ -n "$GITHUB_USERNAME" ] && [ -n "$GHCR_PAT" ]; then
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
+          fi
+        fi
 
         export TALOS_VERSION="v1.11.0"
         export KUBECONFIG="$DATA_DIR/talos/kubeconfig"
@@ -187,20 +188,20 @@ in
         kubeconfig = ".data/talos/kubeconfig";
       };
       
-      # tilt = {
-      #   tilt = {
-      #     enable = true;
-      #     dataDir = ".data/postgres";
-      #     hostname = hostSystemName;
-      #     runtimeInputs = [];
-      #     environment = {
-      #       KUBECONFIG = ".data/talos/kubeconfig";
-      #       HOSTNAME = hostSystemName;
-      #       NIX_CONFIG = "experimental-features = nix-command flakes";
-      #       NIX_PATH = "nixpkgs=${pkgs.path}";
-      #     };
-      #   };
-      # };
+      tilt = {
+        tilt = {
+          enable = true;
+          dataDir = ".data/postgres";
+          hostname = hostSystemName;
+          runtimeInputs = [];
+          environment = {
+            KUBECONFIG = ".data/talos/kubeconfig";
+            HOSTNAME = hostSystemName;
+            NIX_CONFIG = "experimental-features = nix-command flakes";
+            NIX_PATH = "nixpkgs=${pkgs.path}";
+          };
+        };
+      };
     };
     
     settings.processes.cluster.depends_on = {
@@ -213,9 +214,9 @@ in
     settings.processes.storage.depends_on = {
       cluster.condition = "process_log_ready";
     };
-    # settings.processes.tilt.depends_on = {
-    #   storage.condition = "process_completed_successfully";
-    #   cluster.condition = "process_log_ready";
-    # };
+    settings.processes.tilt.depends_on = {
+      storage.condition = "process_completed_successfully";
+      cluster.condition = "process_log_ready";
+    };
   };
 }

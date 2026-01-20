@@ -186,7 +186,7 @@
 
                 if (data.success) {
                     // Redirect to workshop
-                    window.location.href = data.redirect || '/workshop';
+                    window.location.href = data.redirect || '/';
                 } else {
                     showError(data.message || 'Login failed');
                     submitBtn.disabled = false;

@@ -18,7 +18,7 @@ RUN python -c "from ultralytics import YOLO; YOLO('YOLO11n-cls.pt')"
 
 # Copy challenge assets
 COPY source_image.jpg .
-COPY solve_template.ipynb .
+COPY notebook.ipynb .
 
 # Create a non-root user (Standard practice for Jupyter)
 RUN useradd -m player

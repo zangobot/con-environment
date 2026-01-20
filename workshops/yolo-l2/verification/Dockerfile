@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
 # Copy challenge files
-COPY server.py .
+COPY verification.py .
 COPY source_image.jpg .
 
 # Create a non-root user for security
@@ -25,4 +25,4 @@ USER ctf
 
 EXPOSE 5000
 
-CMD ["python", "server.py"]
+CMD ["python", "verification.py"]
