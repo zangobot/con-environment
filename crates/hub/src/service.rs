@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use axum::{
-    response::{Html, IntoResponse, Response},
-    routing::get,
-    Router,
+    Router, response::{Html, IntoResponse, Response}, routing::get
 };
 use pingora::server::Fds;
 use reqwest::StatusCode;
@@ -24,30 +22,32 @@ impl AxumService {
     pub fn new() -> Self {
         let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
         let router = Router::new()
-            .merge(auth::auth_routes())
-            .route("/", get(index).post(auth::handle_login))
-            .route("/workshop-pending", get(pending_handler))
-            .route("/workshop-at-capacity", get(capacity_handler))
-            .route("/workshop-error", get(staff_error_handler))
+            .route("/aiv-workshop-login", get(index).post(auth::handle_login))
+            .route("/aiv-workshop-pending", get(pending_handler))
+            .route("/aiv-workshop-at-capacity", get(capacity_handler))
+            .route("/aiv-workshop-error", get(staff_error_handler))
             .layer(CookieManagerLayer::new());
         Self { router, addr }
     }
 }
 
 async fn index() -> Result<Response, StatusCode> {
+    tracing::debug!("Index request");
     return Ok(Html(include_str!("default_index.html")).into_response());
 }
 
 async fn pending_handler() -> Html<&'static str> {
-    // This contains the <meta refresh> tag
+    tracing::debug!("Pending request");
     Html(include_str!("error_503.html"))
 }
 
 async fn capacity_handler() -> Html<&'static str> {
+    tracing::debug!("Capacity request");
     Html("<h1>Workshop at Capacity</h1><p>Please try again later.</p>")
 }
 
 async fn staff_error_handler() -> Html<&'static str> {
+    tracing::debug!("Staff Error request");
     Html("<h1>Setup Failed</h1><p>Please contact staff for assistance.</p>")
 }
 

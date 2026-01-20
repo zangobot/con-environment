@@ -45,7 +45,7 @@ impl ProxyHttp for WorkshopProxy {
                 }
             }
         } else {
-            "/login"
+            "/aiv-workshop-login"
         };
 
         session

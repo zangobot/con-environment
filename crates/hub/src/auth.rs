@@ -1,4 +1,4 @@
-use axum::{response::IntoResponse, routing::get, Json, Router};
+use axum::{response::IntoResponse, Json};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
@@ -29,16 +29,6 @@ fn sanitize_username(username: &str) -> String {
         .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
         .collect::<String>()
         .to_lowercase()
-}
-
-// Login/logout routes
-pub fn auth_routes() -> Router<()> {
-    Router::new().route("/login", get(login_page))
-}
-
-// Login page handler - serves HTML form
-async fn login_page() -> impl IntoResponse {
-    axum::response::Html(include_str!("default_index.html"))
 }
 
 #[derive(Debug, Deserialize)]
