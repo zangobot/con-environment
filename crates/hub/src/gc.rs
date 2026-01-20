@@ -104,10 +104,15 @@ pub async fn cleanup_idle_pods(&self) -> Result<(), crate::HubError> {
         // --- State Check ---
         // Pods in Pending/Failed/Succeeded state should be checked
         let phase = pod.status.as_ref().and_then(|s| s.phase.as_deref());
-        if phase != Some("Running") {
-            warn!("GC: Found non-Running pod {}. Deleting.", pod_name);
-            delete_resources().await?;
-            continue;
+        match phase {
+            Some("Running") | Some("Pending") => {
+
+            }
+            _ => {
+                warn!("GC: Found non-Running or pending pod {}. Deleting.", pod_name);
+                delete_resources().await?;
+                continue;
+            }
         }
 
         // Pod is running, check its health endpoint

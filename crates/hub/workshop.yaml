@@ -113,14 +113,14 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: allow-hub-to-workshops
-  namespace: workshop # <-- Adapted namespace
+  namespace: workshop
 spec:
   endpointSelector: {}
   ingress:
     # Allow traffic from hub namespace
     - fromEndpoints:
         - matchLabels:
-            io.kubernetes.pod.namespace: workshop-hub-system # <-- Adapted namespace
+            io.kubernetes.pod.namespace: workshop-hub-system
             app: workshop-hub
       toPorts:
         - ports:
@@ -134,13 +134,13 @@ spec:
     # Allow traffic from within workshops namespace (pod-to-pod)
     - fromEndpoints:
         - matchLabels:
-            io.kubernetes.pod.namespace: workshop # <-- Adapted namespace
+            io.kubernetes.pod.namespace: workshop
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: allow-workshops-egress
-  namespace: workshop # <-- Adapted namespace
+  namespace: workshop
 spec:
   endpointSelector:
     matchLabels:
@@ -163,54 +163,7 @@ spec:
     # Allow pod-to-pod in same namespace
     - toEndpoints:
         - matchLabels:
-            io.kubernetes.pod.namespace: workshop # <-- Adapted namespace
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: allow-integration-tests
-  namespace: workshop-hub-system # <-- Adapted namespace
-spec:
-  endpointSelector:
-    matchLabels:
-      app: workshop-integration-tests # This will match the integration test Job
-  egress:
-    # Allow tests to reach hub
-    - toEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: workshop-hub-system # <-- Adapted namespace
-            app: workshop-hub
-      toPorts:
-        - ports:
-            - port: "9000"
-              protocol: TCP
-    
-    # Allow tests to reach workshops
-    - toEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: workshop # <-- Adapted namespace
-      toPorts:
-        - ports:
-            - port: "80"
-              protocol: TCP
-            - port: "9000"
-              protocol: TCP
-            - port: "8888"
-              protocol: TCP
-    
-    # Allow DNS
-    - toEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-    
-    # Allow Kubernetes API access
-    - toEntities:
-        - kube-apiserver
+            io.kubernetes.pod.namespace: workshop
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
@@ -324,10 +277,10 @@ data:
   workshop-pod-limit: "10"
   
   # Resource limits for workshop pods
-  workshop-cpu-request: "2.0"
+  workshop-cpu-request: "1.0"
   workshop-cpu-limit: "2.0"
-  workshop-mem-request: "2Gi"
-  workshop-mem-limit: "4Gi"
+  workshop-mem-request: "1Gi"
+  workshop-mem-limit: "2Gi"
   
   # Sidecar configuration
   sidecar-image: "ghcr.io/nbhdai/workshop-sidecar:latest"

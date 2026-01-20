@@ -192,8 +192,8 @@ fn create_workshop_pod_spec(
                         {"name": "proxy", "containerPort": 8888}
                     ],
                     "resources": {
-                        "requests": {"cpu": config.workshop_cpu_request, "memory": config.workshop_mem_request},
-                        "limits": {"cpu": config.workshop_cpu_limit, "memory": config.workshop_mem_limit},
+                        "requests": {"cpu": "100m", "memory": "64Mi"},
+                        "limits": {"cpu": "200m", "memory": "128Mi"},
                     },
                     "readinessProbe": {
                         "httpGet": {

@@ -60,6 +60,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let config = Arc::new(config::Config::from_env().expect("Failed to load config from env"));
     let kube_client = Client::try_default().await.expect("Kube client failed");
+    tracing::info!("Version 0.1.0");
 
     tracing::info!("Config loaded: {:?}", config);
     let state = AppState {
