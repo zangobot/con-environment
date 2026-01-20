@@ -122,7 +122,7 @@ pub async fn get_or_create_pod(user_id: &str, config: Arc<Config>) -> Result<Pod
     Ok(PodBinding {
         pod_name,
         service_name: service_name.clone(),
-        cluster_dns_name: format!("{}.{}.svc.cluster.local", service_name, namespace),
+        cluster_dns_name: format!("{}.{}.svc.cluster.local:{}", service_name, namespace, config.sidecar_proxy_port),
     })
 }
 
@@ -180,13 +180,13 @@ fn create_workshop_pod_spec(
                     "image": crate::SIDECAR,
                     "imagePullPolicy": "Always",
                     "env": [
-                        {"name": "SIDECAR_HTTP_LISTEN", "value": "0.0.0.0:9000"},
-                        {"name": "SIDECAR_TCP_LISTEN", "value": "0.0.0.0:8888"},
-                        {"name": "SIDECAR_TARGET_TCP", "value": "127.0.0.1:8080"}
+                        {"name": "SIDECAR_HTTP_LISTEN", "value": format!("0.0.0.0:{}", config.sidecar_health_port)},
+                        {"name": "SIDECAR_TCP_LISTEN", "value": format!("0.0.0.0:{}", config.sidecar_proxy_port)},
+                        {"name": "SIDECAR_TARGET_TCP", "value": format!("127.0.0.1:{}", config.workshop_port)},
                     ],
                     "ports": [
-                        {"name": "health", "containerPort": 9000},
-                        {"name": "proxy", "containerPort": 8888}
+                        {"name": "health", "containerPort": config.sidecar_health_port},
+                        {"name": "proxy", "containerPort": config.sidecar_proxy_port}
                     ],
                     "resources": {
                         "requests": {"cpu": "100m", "memory": "64Mi"},
@@ -195,7 +195,7 @@ fn create_workshop_pod_spec(
                     "readinessProbe": {
                         "httpGet": {
                             "path": "/health",
-                            "port": 9000,
+                            "port": config.sidecar_health_port,
                             "scheme": "HTTP"
                         },
                         "initialDelaySeconds": 60,
@@ -207,7 +207,7 @@ fn create_workshop_pod_spec(
                     "livenessProbe": {
                         "httpGet": {
                             "path": "/health",
-                            "port": 9000,
+                            "port": config.sidecar_health_port,
                             "scheme": "HTTP"
                         },
                         "initialDelaySeconds": 10,

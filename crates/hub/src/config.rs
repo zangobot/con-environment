@@ -28,6 +28,14 @@ pub struct Config {
     #[serde(default = "default_workshop_port")]
     pub workshop_port: u16,
 
+    /// The port the sidecar forwards traffic to the workshop on.
+    #[serde(default = "default_sidecar_proxy_port")]
+    pub sidecar_proxy_port: u16,
+
+    /// The port the sidecar listens on for health reporting.
+    #[serde(default = "default_sidecar_health_port")]
+    pub sidecar_health_port: u16,
+
     /// Max number of concurrent workshop pods allowed to run.
     #[serde(default = "default_workshop_pod_limit")]
     pub workshop_pod_limit: usize,
@@ -70,8 +78,14 @@ fn default_workshop_port() -> u16 {
     80
 }
 fn default_workshop_pod_limit() -> usize {
-    100
-} // Default to 100 pods
+    10
+}
+fn default_sidecar_proxy_port() -> u16 {
+    8888
+}
+fn default_sidecar_health_port() -> u16 {
+    9000
+}
 fn default_workshop_cpu_request() -> String {
     "100m".to_string()
 }
