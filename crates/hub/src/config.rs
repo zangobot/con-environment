@@ -13,11 +13,11 @@ pub struct Config {
 
     /// Max time-to-live for a pod in seconds, regardless of activity.
     #[serde(default = "default_workshop_ttl")]
-    pub workshop_ttl_seconds: u64,
+    pub workshop_ttl_seconds: i64,
 
     /// Max idle time in seconds before a pod is cleaned up.
     #[serde(default = "default_workshop_idle")]
-    pub workshop_idle_seconds: u64,
+    pub workshop_idle_seconds: i64,
 
     // --- New Fields Below ---
     /// The container image to use for the workshop.
@@ -55,10 +55,10 @@ fn default_workshop_name() -> String {
 fn default_workshop_namespace() -> String {
     "default".to_string()
 }
-fn default_workshop_ttl() -> u64 {
+fn default_workshop_ttl() -> i64 {
     8 * 60 * 60
 } // 8 hours
-fn default_workshop_idle() -> u64 {
+fn default_workshop_idle() -> i64 {
     60 * 60
 } // 1 hour
 

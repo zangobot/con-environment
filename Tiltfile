@@ -52,18 +52,6 @@ build_flake_image(
     ]
 )
 
-# Build Integration Tests image using nix flake
-build_flake_image(
-    'workshop-integration-tests',
-    '.',
-    'workshop-integration-tests',
-    deps=[
-        './crates/integration-tests/src',
-        './crates/integration-tests/Cargo.toml',
-        './Cargo.lock',
-    ]
-)
-
 # Deploy Hub infrastructure
 k8s_yaml('./setup/k8/workshop.yaml')
 

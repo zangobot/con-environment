@@ -2,15 +2,8 @@
 use std::sync::Arc;
 use crate::config::Config;
 
-/// Environment validation for Talos test cluster
-#[derive(Debug)]
-pub struct TalosTestEnv {
-    pub kubeconfig: String,
-    pub cluster_name: String,
-}
-
 /// Validates that we're running in the correct test environment
-pub fn validate_talos_environment() -> Result<TalosTestEnv, String> {
+pub fn validate_talos_environment() -> Result<(), String> {
     // Check for KUBECONFIG
     let kubeconfig = std::env::var("KUBECONFIG")
         .map_err(|_| "KUBECONFIG not set. Please run: export KUBECONFIG=~/.kube/config")?;
@@ -24,10 +17,7 @@ pub fn validate_talos_environment() -> Result<TalosTestEnv, String> {
         ));
     }
     
-    Ok(TalosTestEnv {
-        kubeconfig,
-        cluster_name: "talos-test".to_string(),
-    })
+    Ok(())
 }
 
 /// Get base test configuration with reasonable defaults
@@ -61,22 +51,5 @@ pub fn get_gc_test_config() -> Arc<Config> {
         workshop_cpu_limit: "100m".to_string(),
         workshop_mem_request: "32Mi".to_string(),
         workshop_mem_limit: "128Mi".to_string(),
-    })
-}
-
-/// Get configuration for stress testing (higher limits)
-pub fn get_stress_test_config() -> Arc<Config> {
-    Arc::new(Config {
-        workshop_name: "stress-workshop".to_string(),
-        workshop_namespace: "test-workshops".to_string(),  // Cross-namespace
-        workshop_ttl_seconds: 1800,     // 30 minutes
-        workshop_idle_seconds: 300,     // 5 minutes
-        workshop_image: "nginxdemos/hello".to_string(),
-        workshop_port: 80,
-        workshop_pod_limit: 50,         // Much higher limit for stress testing
-        workshop_cpu_request: "100m".to_string(),
-        workshop_cpu_limit: "500m".to_string(),
-        workshop_mem_request: "128Mi".to_string(),
-        workshop_mem_limit: "512Mi".to_string(),
     })
 }

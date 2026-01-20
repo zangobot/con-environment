@@ -4,13 +4,11 @@ use serde_json::json;
 use std::sync::Arc;
 use std::collections::BTreeMap;
 use std::time::Duration;
-use crate::{auth, config, AppState};
+use crate::{AppState, config};
 use super::config::{get_test_config, get_gc_test_config, validate_talos_environment};
 
 /// Main test context that encapsulates all test dependencies
 pub struct TestContext {
-    pub client: Client,
-    pub config: Arc<config::Config>,
     pub state: AppState,
     pub test_namespace: String,
 }
@@ -32,6 +30,8 @@ impl TestContext {
         validate_talos_environment()
             .expect("Not running in Talos environment. See README for setup instructions.");
         
+        tracing::info!("🧪 Setting up test context for: {}", test_name);
+        
         let client = Client::try_default()
             .await
             .expect("Failed to create test Kubernetes client. Is the Talos cluster running?");
@@ -41,6 +41,8 @@ impl TestContext {
         let test_namespace = format!("test-{}", 
             test_name.to_lowercase().replace('_', "-")
         );
+        
+        tracing::debug!("Creating/verifying test namespace: {}", test_namespace);
         
         // Try to create the namespace (idempotent)
         let ns_api: Api<Namespace> = Api::all(client.clone());
@@ -59,15 +61,16 @@ impl TestContext {
         // Create if it doesn't exist, ignore if it already exists
         match ns_api.create(&PostParams::default(), &namespace).await {
             Ok(_) => {
-                tracing::info!("Created test namespace: {}", test_namespace);
+                tracing::info!("✓ Created test namespace: {}", test_namespace);
                 // Wait for namespace to be ready
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
             Err(kube::Error::Api(err)) if err.code == 409 => {
                 // Namespace already exists, that's fine
-                tracing::info!("Using existing test namespace: {}", test_namespace);
+                tracing::info!("✓ Using existing test namespace: {}", test_namespace);
             }
             Err(e) => {
+                tracing::error!("❌ Failed to create test namespace: {}", e);
                 panic!("Failed to create test namespace: {}", e);
             }
         }
@@ -78,65 +81,43 @@ impl TestContext {
         // Make workshop_name unique to this namespace
         config_clone.workshop_name = format!("{}-test", config_clone.workshop_name);
         let config = Arc::new(config_clone);
-    
         
-        let http_client = hyper_util::client::legacy::Client::builder(
-            hyper_util::rt::TokioExecutor::new()
-        ).build_http();
+        tracing::debug!("Initializing HTTP client for test state");
         
         let state = AppState {
             kube_client: client.clone(),
-            http_client,
             config: config.clone(),
         };
         
         let ctx = Self {
-            client,
-            config,
             state,
             test_namespace,
         };
         
+        tracing::info!("🧹 Clearing test namespace before test execution");
         // Clear the namespace before starting the test
         ctx.clear().await;
         
+        tracing::info!("✅ Test context ready for: {}", test_name);
         ctx
-    }
-    
-    /// Generate a test JWT token for a given username
-    pub fn generate_token(&self, username: &str) -> String {
-        use jsonwebtoken::{encode, Header};
-        use std::time::{SystemTime, UNIX_EPOCH};
-        
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        
-        let claims = auth::Claims {
-            sub: username.to_string(),
-            exp: (now + 3600) as usize,
-            iat: now as usize,
-        };
-        
-        encode(&Header::default(), &claims, &self.state.auth_keys.encoding)
-            .expect("Failed to encode test token")
     }
     
     /// Clear all resources in the test namespace (but keep the namespace)
     /// This is called automatically when creating a test context
     pub async fn clear(&self) {
-        tracing::info!("Clearing test namespace: {}", self.test_namespace);
+        tracing::info!("🧹 Clearing test namespace: {}", self.test_namespace);
         
         // Delete all pods
         let pod_api: Api<Pod> = Api::namespaced(
-            self.client.clone(),
+            self.state.kube_client.clone(),
             &self.test_namespace
         );
         
         if let Ok(pods) = pod_api.list(&ListParams::default()).await {
+            tracing::debug!("Found {} pods to delete", pods.items.len());
             for pod in pods.items {
                 if let Some(name) = pod.metadata.name {
+                    tracing::trace!("Deleting pod: {}", name);
                     let _ = pod_api.delete(&name, &DeleteParams::default()).await;
                 }
             }
@@ -144,303 +125,225 @@ impl TestContext {
         
         // Delete all services
         let svc_api: Api<Service> = Api::namespaced(
-            self.client.clone(),
+            self.state.kube_client.clone(),
             &self.test_namespace
         );
         
         if let Ok(services) = svc_api.list(&ListParams::default()).await {
+            tracing::debug!("Found {} services to delete", services.items.len());
             for service in services.items {
                 if let Some(name) = service.metadata.name {
+                    tracing::trace!("Deleting service: {}", name);
                     let _ = svc_api.delete(&name, &DeleteParams::default()).await;
                 }
             }
         }
         
         // Wait for deletions to complete
+        tracing::debug!("Waiting 2s for resource deletions to propagate");
         tokio::time::sleep(Duration::from_secs(2)).await;
         
-        tracing::info!("Test namespace cleared: {}", self.test_namespace);
+        tracing::info!("✓ Test namespace cleared: {}", self.test_namespace);
     }
     
     /// Create a test pod with standard labels
     pub async fn create_test_pod(&self, user_id: &str) -> Result<Pod, kube::Error> {
+        tracing::info!("Creating test pod for user_id: {}", user_id);
+        
         let pod_api: Api<Pod> = Api::namespaced(
-            self.client.clone(),
-            &self.config.workshop_namespace
+            self.state.kube_client.clone(),
+            &self.state.config.workshop_namespace
         );
         
-        let pod_name = format!("{}-{}", self.config.workshop_name, user_id);
+        let pod_name = format!("{}-{}", self.state.config.workshop_name, user_id);
         
         let mut labels = BTreeMap::new();
         labels.insert("workshop-hub/user-id".to_string(), user_id.to_string());
-        labels.insert("workshop-hub/workshop-name".to_string(), self.config.workshop_name.clone());
+        labels.insert("workshop-hub/workshop-name".to_string(), self.state.config.workshop_name.clone());
         labels.insert("app.kubernetes.io/managed-by".to_string(), "workshop-hub".to_string());
         // Add app label for service selector (matches orchestrator pattern)
         labels.insert("app".to_string(), pod_name.clone());
+        
+        tracing::debug!("Pod name: {}, labels: {:?}", pod_name, labels);
         
         let pod: Pod = serde_json::from_value(json!({
             "apiVersion": "v1",
             "kind": "Pod",
             "metadata": {
                 "name": pod_name,
-                "labels": labels
+                "namespace": self.state.config.workshop_namespace,
+                "labels": labels,
             },
             "spec": {
-                "restartPolicy": "Never",
-                "containers": [
-                    {
-                        "name": "user-app",
-                        "image": self.config.workshop_image.clone(),
-                        "ports": [{"containerPort": self.config.workshop_port}]
-                    },
-                    {
-                        "name": "sidecar",
-                        "image": crate::SIDECAR,
-                        "env": [
-                            {
-                                "name": "TARGET_PORT",
-                                "value": self.config.workshop_port.to_string()
-                            }
-                        ],
-                        "ports": [
-                            {"containerPort": 8888, "name": "proxy"},
-                            {"containerPort": 8080, "name": "health"}
-                        ]
+                "containers": [{
+                    "name": "workshop",
+                    "image": self.state.config.workshop_image,
+                    "ports": [{
+                        "containerPort": self.state.config.workshop_port
+                    }],
+                    "resources": {
+                        "requests": {
+                            "cpu": self.state.config.workshop_cpu_request,
+                            "memory": self.state.config.workshop_mem_request,
+                        },
+                        "limits": {
+                            "cpu": self.state.config.workshop_cpu_limit,
+                            "memory": self.state.config.workshop_mem_limit,
+                        }
                     }
-                ]
+                }]
             }
         })).unwrap();
         
-        pod_api.create(&PostParams::default(), &pod).await
+        let created_pod = pod_api.create(&PostParams::default(), &pod).await?;
+        
+        tracing::info!("✓ Test pod created: {}", pod_name);
+        tracing::trace!("Pod details: {:?}", created_pod.metadata);
+        
+        Ok(created_pod)
     }
     
     /// Create a test service for a user pod
     pub async fn create_test_service(&self, user_id: &str) -> Result<Service, kube::Error> {
-        let pod_api: Api<Pod> = Api::namespaced(
-            self.client.clone(),
-            &self.config.workshop_namespace
-        );
+        tracing::info!("Creating test service for user_id: {}", user_id);
         
         let svc_api: Api<Service> = Api::namespaced(
-            self.client.clone(),
-            &self.config.workshop_namespace
+            self.state.kube_client.clone(),
+            &self.state.config.workshop_namespace
         );
         
-        let service_name = format!("{}-{}", self.config.workshop_name, user_id);
-        let pod_name = service_name.clone();
+        let service_name = format!("{}-{}", self.state.config.workshop_name, user_id);
+        let pod_name = format!("{}-{}", self.state.config.workshop_name, user_id);
         
-        // Get the pod to create an owner reference
-        let pod = pod_api.get(&pod_name).await?;
-        let pod_uid = pod.metadata.uid.clone()
-            .ok_or_else(|| kube::Error::Api(kube::error::ErrorResponse {
-                status: "Error".to_string(),
-                message: "Pod UID not found".to_string(),
-                reason: "PodUIDMissing".to_string(),
-                code: 500,
-            }))?;
+        tracing::debug!("Service name: {}, targeting pod: {}", service_name, pod_name);
         
-        let mut labels = BTreeMap::new();
-        labels.insert("workshop-hub/user-id".to_string(), user_id.to_string());
-        labels.insert("workshop-hub/workshop-name".to_string(), self.config.workshop_name.clone());
-        labels.insert("app.kubernetes.io/managed-by".to_string(), "workshop-hub".to_string());
-        
-        // Create owner reference so service is deleted when pod is deleted
-        let owner_ref = serde_json::json!({
-            "apiVersion": "v1",
-            "kind": "Pod",
-            "name": pod_name,
-            "uid": pod_uid,
-            "controller": false,
-            "blockOwnerDeletion": false
-        });
+        let mut selector = BTreeMap::new();
+        selector.insert("app".to_string(), pod_name);
         
         let service: Service = serde_json::from_value(json!({
             "apiVersion": "v1",
             "kind": "Service",
             "metadata": {
                 "name": service_name,
-                "labels": labels,
-                "ownerReferences": [owner_ref]
+                "namespace": self.state.config.workshop_namespace,
             },
             "spec": {
-                "selector": {
-                    "app": pod_name
-                },
-                "ports": [
-                    {
-                        "name": "proxy",
-                        "protocol": "TCP",
-                        "port": 8888,
-                        "targetPort": 8888
-                    },
-                    {
-                        "name": "health",
-                        "protocol": "TCP",
-                        "port": 8080,
-                        "targetPort": 8080
-                    }
-                ]
+                "selector": selector,
+                "ports": [{
+                    "protocol": "TCP",
+                    "port": self.state.config.workshop_port,
+                    "targetPort": self.state.config.workshop_port,
+                }]
             }
         })).unwrap();
         
-        svc_api.create(&PostParams::default(), &service).await
-    }
-    
-    /// Wait for a pod to reach running state
-    pub async fn wait_for_pod_running(&self, pod_name: &str) -> Result<(), kube::Error> {
-        let pod_api: Api<Pod> = Api::namespaced(
-            self.client.clone(),
-            &self.config.workshop_namespace
-        );
+        let created_service = svc_api.create(&PostParams::default(), &service).await?;
         
-        for _ in 0..60 {
-            if !self.pod_exists(pod_name).await {
-                return Err(kube::Error::Api(kube::error::ErrorResponse {
-                    status: format!("Pod {} was deleted", pod_name),
-                    message: format!("Pod {} was deleted while waiting", pod_name),
-                    reason: "Deleted".to_string(),
-                    code: 410,
-                }));
-            }
-            
-            if let Ok(pod) = pod_api.get(pod_name).await {
-                if let Some(status) = &pod.status {
-                    if let Some(phase) = &status.phase {
-                        if phase == "Running" {
-                            return Ok(());
-                        }
-                        if phase == "Failed" || phase == "Unknown" {
-                            return Err(kube::Error::Api(kube::error::ErrorResponse {
-                                status: format!("Pod {} entered {} state", pod_name, phase),
-                                message: format!("Pod {} did not reach running state", pod_name),
-                                reason: phase.clone(),
-                                code: 500,
-                            }));
-                        }
-                    }
-                }
-            }
-            
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
+        tracing::info!("✓ Test service created: {}", service_name);
         
-        Err(kube::Error::Api(kube::error::ErrorResponse {
-            status: "Timeout".to_string(),
-            message: format!("Pod {} did not become running in time", pod_name),
-            reason: "Timeout".to_string(),
-            code: 408,
-        }))
+        Ok(created_service)
     }
     
     /// Check if a pod exists
     pub async fn pod_exists(&self, pod_name: &str) -> bool {
+        tracing::trace!("Checking if pod exists: {}", pod_name);
+        
         let pod_api: Api<Pod> = Api::namespaced(
-            self.client.clone(),
-            &self.config.workshop_namespace
+            self.state.kube_client.clone(),
+            &self.state.config.workshop_namespace
         );
         
-        pod_api.get(pod_name).await.is_ok()
+        let exists = pod_api.get(pod_name).await.is_ok();
+        
+        tracing::trace!("Pod '{}' exists: {}", pod_name, exists);
+        
+        exists
     }
     
     /// Check if a service exists
     pub async fn service_exists(&self, service_name: &str) -> bool {
+        tracing::trace!("Checking if service exists: {}", service_name);
+        
         let svc_api: Api<Service> = Api::namespaced(
-            self.client.clone(),
-            &self.config.workshop_namespace
+            self.state.kube_client.clone(),
+            &self.state.config.workshop_namespace
         );
         
-        svc_api.get(service_name).await.is_ok()
+        let exists = svc_api.get(service_name).await.is_ok();
+        
+        tracing::trace!("Service '{}' exists: {}", service_name, exists);
+        
+        exists
     }
     
-    /// Count managed pods in the namespace
+    /// Count the number of workshop-managed pods in the namespace
     pub async fn count_managed_pods(&self) -> usize {
+        tracing::trace!("Counting managed pods in namespace: {}", self.test_namespace);
+        
         let pod_api: Api<Pod> = Api::namespaced(
-            self.client.clone(),
-            &self.config.workshop_namespace
+            self.state.kube_client.clone(),
+            &self.state.config.workshop_namespace
         );
         
-        let list_params = ListParams::default()
-            .labels(&format!(
-                "workshop-hub/workshop-name={},app.kubernetes.io/managed-by=workshop-hub",
-                self.config.workshop_name
-            ));
+        let mut list_params = ListParams::default();
+        list_params.label_selector = Some(format!(
+            "app.kubernetes.io/managed-by=workshop-hub,workshop-hub/workshop-name={}",
+            self.state.config.workshop_name
+        ));
         
-        pod_api
-            .list(&list_params)
-            .await
-            .map(|list| list.items.len())
-            .unwrap_or(0)
-    }
-
-    /// Make an HTTP request to a service in the test namespace
-    /// This is useful for testing pod communication
-    pub async fn http_get_service(
-        &self,
-        user_id: &str,
-        port: u16,
-        path: &str,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        let service_name = format!("{}-{}", self.config.workshop_name, user_id);
-        let url = format!(
-            "http://{}.{}.svc.cluster.local:{}{}",
-            service_name,
-            self.config.workshop_namespace,
-            port,
-            path
-        );
+        let pods = pod_api.list(&list_params).await
+            .expect("Failed to list pods");
         
-        tracing::debug!("HTTP GET: {}", url);
+        let count = pods.items.len();
         
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?;
+        tracing::debug!("Found {} managed pods", count);
         
-        client.get(&url).send().await
+        count
     }
     
-    /// Check the health endpoint of a pod's sidecar
-    pub async fn check_pod_health(&self, user_id: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-        let response = self.http_get_service(user_id, 8080, "/health").await?;
+    /// Wait for a pod to reach running state
+    pub async fn wait_for_pod_running(&self, pod_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        tracing::info!("⏳ Waiting for pod to reach Running state: {}", pod_name);
         
-        if !response.status().is_success() {
-            return Err(format!("Health check failed with status: {}", response.status()).into());
+        let pod_api: Api<Pod> = Api::namespaced(
+            self.state.kube_client.clone(),
+            &self.state.config.workshop_namespace
+        );
+        
+        let timeout = Duration::from_secs(60);
+        let start = std::time::Instant::now();
+        
+        loop {
+            if start.elapsed() > timeout {
+                tracing::error!("❌ Timeout waiting for pod '{}' to reach Running state", pod_name);
+                return Err(format!("Timeout waiting for pod {} to be running", pod_name).into());
+            }
+            
+            match pod_api.get(pod_name).await {
+                Ok(pod) => {
+                    if let Some(status) = &pod.status {
+                        if let Some(phase) = &status.phase {
+                            tracing::trace!("Pod '{}' phase: {}", pod_name, phase);
+                            
+                            if phase == "Running" {
+                                tracing::info!("✓ Pod '{}' is Running", pod_name);
+                                return Ok(());
+                            }
+                            
+                            if phase == "Failed" || phase == "Unknown" {
+                                tracing::error!("❌ Pod '{}' entered failed state: {}", pod_name, phase);
+                                return Err(format!("Pod {} failed to start: {}", pod_name, phase).into());
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Error getting pod '{}': {}", pod_name, e);
+                    return Err(format!("Failed to get pod {}: {}", pod_name, e).into());
+                }
+            }
+            
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        
-        let json = response.json().await?;
-        Ok(json)
-    }
-    
-    /// Send a request through the sidecar proxy to the workshop container
-    pub async fn proxy_to_workshop(&self, user_id: &str, path: &str) -> Result<reqwest::Response, reqwest::Error> {
-        self.http_get_service(user_id, 8888, path).await
-    }
-}
-
-// Namespaces persist in test environment - no automatic cleanup needed
-
-/// Mock HTTP responses for testing
-pub mod mock {
-    use axum::response::Response;
-    use hyper::StatusCode;
-    
-    pub fn health_response(idle_seconds: u64) -> Response<axum::body::Body> {
-        let body = serde_json::json!({
-            "status": "ok",
-            "last_activity_timestamp": chrono::Utc::now().timestamp() - idle_seconds as i64,
-            "idle_seconds": idle_seconds
-        }).to_string();
-        
-        Response::builder()
-            .status(StatusCode::OK)
-            .header("content-type", "application/json")
-            .body(body.into())
-            .unwrap()
-    }
-    
-    pub fn unhealthy_response() -> Response<axum::body::Body> {
-        Response::builder()
-            .status(StatusCode::SERVICE_UNAVAILABLE)
-            .body("unhealthy".into())
-            .unwrap()
     }
 }

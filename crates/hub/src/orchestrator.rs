@@ -1,3 +1,4 @@
+use chrono::Utc;
 use k8s_openapi::api::core::v1::{Pod, Service};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
 use kube::{
@@ -87,10 +88,7 @@ pub async fn get_or_create_pod(
     let service_name = pod_name.clone();
 
     // Calculate expiration time
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| HubError::InternalError("System time error".to_string()))?
-        .as_secs();
+    let now = Utc::now().timestamp();
     let expires_at = now + config.workshop_ttl_seconds;
 
     // Create the Pod
@@ -137,7 +135,7 @@ fn create_workshop_pod_spec(
     pod_name: &str,
     user_id: &str,
     config: &Config,
-    expires_at_timestamp: u64,
+    expires_at_timestamp: i64,
 ) -> Pod {
     let mut labels = BTreeMap::new();
     labels.insert(LABEL_USER_ID.to_string(), user_id.to_string());
@@ -151,7 +149,6 @@ fn create_workshop_pod_spec(
     let mut annotations = BTreeMap::new();
     annotations.insert(TTL_ANNOTATION.to_string(), expires_at_timestamp.to_string());
 
-    // This is where you define your workshop container and the sidecar
     serde_json::from_value(json!({
         "apiVersion": "v1",
         "kind": "Pod",
@@ -161,11 +158,9 @@ fn create_workshop_pod_spec(
             "annotations": annotations // <-- Add annotations
         },
         "spec": {
-            // Restart "Never" so they are just cleaned up if they fail
             "restartPolicy": "Never",
             "containers": [
                 // --- 1. The Workshop Container ---
-                // This is a placeholder. Put your actual container here.
                 {
                     "name": "workshop",
                     "image": config.workshop_image,
@@ -183,17 +178,13 @@ fn create_workshop_pod_spec(
                     }
                 },
                 // --- 2. The Sidecar Container ---
-                // This uses the sidecar you built
                 {
                     "name": "sidecar",
                     "image": crate::SIDECAR, 
                     "imagePullPolicy": "Always",
                     "env": [
-                        // axum health server
                         {"name": "SIDECAR_HTTP_LISTEN", "value": "0.0.0.0:9000"},
-                        // pingora proxy
                         {"name": "SIDECAR_TCP_LISTEN", "value": "0.0.0.0:8888"},
-                        // Proxy target: the workshop container
                         {"name": "SIDECAR_TARGET_TCP", "value": "127.0.0.1:8080"}
                     ],
                     "ports": [
@@ -204,7 +195,6 @@ fn create_workshop_pod_spec(
                         "requests": {"cpu": config.workshop_cpu_request, "memory": config.workshop_mem_request},
                         "limits": {"cpu": config.workshop_cpu_limit, "memory": config.workshop_mem_limit},
                     },
-                    // Readiness probe: Is the sidecar ready to accept traffic?
                     "readinessProbe": {
                         "httpGet": {
                             "path": "/health",
@@ -217,7 +207,6 @@ fn create_workshop_pod_spec(
                         "successThreshold": 1,
                         "failureThreshold": 4
                     },
-                    // Liveness probe: Is the sidecar still alive?
                     "livenessProbe": {
                         "httpGet": {
                             "path": "/health",

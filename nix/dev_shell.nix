@@ -275,20 +275,20 @@ in
         kubeconfig = ".data/talos/kubeconfig";
       };
       
-      tilt = {
-        tilt = {
-          enable = true;
-          dataDir = ".data/postgres";
-          hostname = hostSystemName;
-          runtimeInputs = [];
-          environment = {
-            KUBECONFIG = ".data/talos/kubeconfig";
-            HOSTNAME = hostSystemName;
-            NIX_CONFIG = "experimental-features = nix-command flakes";
-            NIX_PATH = "nixpkgs=${pkgs.path}";
-          };
-        };
-      };
+      # tilt = {
+      #   tilt = {
+      #     enable = true;
+      #     dataDir = ".data/postgres";
+      #     hostname = hostSystemName;
+      #     runtimeInputs = [];
+      #     environment = {
+      #       KUBECONFIG = ".data/talos/kubeconfig";
+      #       HOSTNAME = hostSystemName;
+      #       NIX_CONFIG = "experimental-features = nix-command flakes";
+      #       NIX_PATH = "nixpkgs=${pkgs.path}";
+      #     };
+      #   };
+      # };
     };
     
     settings.processes.cluster.depends_on = {
@@ -296,14 +296,14 @@ in
       k8s.condition = "process_started";
       gcr.condition = "process_started";
       ghcr.condition = "process_started";
-      # patch0.condition = "process_completed_successfully";
+      patch0.condition = "process_completed_successfully";
     };
     settings.processes.storage.depends_on = {
       cluster.condition = "process_log_ready";
     };
-    settings.processes.tilt.depends_on = {
-      storage.condition = "process_completed_successfully";
-      cluster.condition = "process_log_ready";
-    };
+    # settings.processes.tilt.depends_on = {
+    #   storage.condition = "process_completed_successfully";
+    #   cluster.condition = "process_log_ready";
+    # };
   };
 }
