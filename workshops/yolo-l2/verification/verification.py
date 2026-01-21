@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 # --- CONFIG ---
 FLAG = os.environ("FLAG", "ChristianSzegedy")
-SOURCE_IMAGE_PATH = os.environ("SOURCE_IMAGE_PATH", "source_image.jpg")
+SOURCE_IMAGE_PATH = os.environ("SOURCE_IMAGE_PATH", "nika.png")
 L2_THRESHOLD = os.environ("L2_THRESHOLD", 50.0 )
 ORIGINAL_CLASS_ID = os.environ("ORIGINAL_CLASS_ID", 0)
 

@@ -17,7 +17,7 @@ RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
 # Copy challenge files
 COPY verification.py .
-COPY source_image.jpg .
+COPY nika.png .
 
 # Create a non-root user for security
 RUN useradd -m ctf
