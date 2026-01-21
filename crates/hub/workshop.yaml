@@ -39,7 +39,7 @@ rules:
   # Pod management in workshop namespaces only
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"] # Merged verbs from dev-tilt
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
   
   # Pod status for health checks
   - apiGroups: [""]
@@ -49,14 +49,14 @@ rules:
   # Service management in workshop namespaces
   - apiGroups: [""]
     resources: ["services"]
-    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"] # Merged verbs from dev-tilt
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
   
-  # Secret management in workshop namespaces (from dev-tilt)
+  # Secret management in workshop namespaces
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"] # Merged verbs from dev-tilt
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
 
-  # Ability to check if namespaces exist (but not create them)
+  # Ability to check if namespaces exist
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get"]
@@ -65,7 +65,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: workshop-hub-manage-workshops
-  namespace: workshop # Binds role in the workshop namespace
+  namespace: workshop
   labels:
     app: workshop-hub
 roleRef:
@@ -75,13 +75,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: workshop-hub-controller
-    namespace: workshop-hub-system # To the hub's SA
+    namespace: workshop-hub-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: workshop-hub-self
-  namespace: workshop-hub-system # For hub's own namespace
+  namespace: workshop-hub-system
   labels:
     app: workshop-hub
 rules:
@@ -116,7 +116,9 @@ metadata:
   namespace: workshop
 spec:
   description: "Allow workshop pods to receive traffic from the hub"
-  endpointSelector: {}
+  endpointSelector: 
+    matchLabels:
+      managed-by: workshop-hub
   ingress:
     - fromEndpoints:
         - matchLabels:
@@ -231,7 +233,7 @@ spec:
   description: "Allow workshop pods to reach DNS, internet, and internal services"
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/managed-by: workshop-hub
+      managed-by: workshop-hub
   egress:
     - toEndpoints:
         - matchLabels:
@@ -245,6 +247,7 @@ spec:
               protocol: TCP
     - toEntities:
         - world
+    # This allows workshops to talk to services in the same namespace (like challenge-server)
     - toEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: workshop
@@ -310,13 +313,19 @@ data:
   # Core configuration
   workshop-name: "test-workshop"
   workshop-namespace: "workshop"
+  # CHANGED: Added yolo-l2 and email-indirect workshops
   config.yaml: |
-    workshop_name: "test-workshop"
+    workshops:
+      - name: "yolo-l2"
+        image: "ghcr.io/nbhdai/workshop-yolo-l2-notebook:latest"
+        description: "YOLO Adversarial Challenge"
+      - name: "email-indirect"
+        image: "ghcr.io/nbhdai/workshop-email-indirect-user:latest"
+        description: "Email Injection Challenge"
     workshop_namespace: "workshop"
     workshop_ttl_seconds: 3600
     workshop_idle_seconds: 600
-    workshop_image: "traefik/whoami"
-    workshop_port: 80
+    workshop_port: 8888
     sidecar_proxy_port: 8888
     sidecar_health_port: 9000
     workshop_pod_limit: 10
@@ -385,13 +394,11 @@ spec:
             capabilities:
               drop:
               - "ALL"
-
             seccompProfile:
               type: "RuntimeDefault"
           env:
             - name: HOME
               value: "/tmp"
-            # Logging
             - name: RUST_LOG
               value: "trace,tower_http=debug,tower=info,fred=debug,h2=off,hyper=off,sqlx=off,tarpc=off,rustls=off"
           volumeMounts:
@@ -420,3 +427,107 @@ spec:
       targetPort: 8080
       nodePort: 30303
       protocol: TCP
+
+# =============================================================================
+# 6. Supporting Services (YOLO & Email Challenges)
+# =============================================================================
+---
+# YOLO Challenge Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: challenge-server
+  namespace: workshop
+  labels:
+    app: challenge-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: challenge-server
+  template:
+    metadata:
+      labels:
+        app: challenge-server
+    spec:
+      containers:
+        - name: verification
+          image: ghcr.io/nbhdai/workshop-yolo-l2-verification:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: L2_THRESHOLD
+              value: "50.0"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: challenge-server
+  namespace: workshop
+spec:
+  selector:
+    app: challenge-server
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+
+---
+# Email Workshop Service (LLM Bot)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: email-service
+  namespace: workshop
+  labels:
+    app: email-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: email-service
+  template:
+    metadata:
+      labels:
+        app: email-service
+    spec:
+      containers:
+        - name: service
+          image: ghcr.io/nbhdai/workshop-email-indirect-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 2525
+          env:
+            - name: LISTEN_PORT
+              value: "2525"
+            - name: VLLM_URL
+              # Pointing to the AI Proxy in default namespace (assuming it exists based on policies)
+              value: "http://ai-proxy-svc.default.svc.cluster.local/v1/chat/completions"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: email-service
+  namespace: workshop
+spec:
+  selector:
+    app: email-service
+  ports:
+    - protocol: TCP
+      port: 2525
+      targetPort: 2525

@@ -1,20 +1,30 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
-# Install system dependencies for OpenCV (required by YOLO)
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+# Install minimal system dependencies for OpenCV
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
     libglib2.0-0 \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 WORKDIR /workspace
 
-# Install Python libraries
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install CPU-only PyTorch first (much smaller than GPU version)
+RUN pip install --no-cache-dir \
+    torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies
+RUN pip install --no-cache-dir \
+    flask \
+    numpy \
+    pillow \
+    ultralytics \
+    jupyter \
+    matplotlib \
+    requests
 
 # Pre-download the YOLO model so players don't wait
-RUN python -c "from ultralytics import YOLO; YOLO('YOLO11n-cls.pt')"
+RUN python -c "from ultralytics import YOLO; YOLO('yolo11n-cls.pt')"
 
 # Copy challenge assets
 COPY nika.png .

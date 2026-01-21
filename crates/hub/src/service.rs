@@ -67,6 +67,7 @@ impl AxumService {
         debug!(?addr, "Service will bind to address");
 
         let router = Router::new()
+            .route("/health", get(health_handler))
             .route("/index", get(index_handler))
             .route("/workshop-login", get(login_handler).post(auth::handle_login))
             .route("/workshop-pending/{name}", get(pending_handler))
@@ -78,6 +79,10 @@ impl AxumService {
 
         Self { router, addr }
     }
+}
+
+async fn health_handler() -> impl IntoResponse {
+    StatusCode::OK
 }
 
 /// Workshop index page - shows available workshops

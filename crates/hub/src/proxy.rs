@@ -28,6 +28,7 @@ impl ProxyHttp for WorkshopProxy {
             .map(|q| format!("?{}", q))
             .unwrap_or_default();
 
+
         // Validate Cookie
         let cookie_header = session
             .req_header()
@@ -43,6 +44,7 @@ impl ProxyHttp for WorkshopProxy {
             if path == "/workshop-login"
                 || path.starts_with("/public")
                 || path.starts_with("/assets")
+                || path == "/health"
             {
                 // Pass through to local UI handler as-is
                 return Ok(Box::new(HttpPeer::new(
@@ -99,7 +101,10 @@ impl ProxyHttp for WorkshopProxy {
                     let new_uri_string = format!("{}{}", target_path, query);
                     if let Ok(new_uri) = Uri::from_str(&new_uri_string) {
                         session.req_header_mut().set_uri(new_uri);
+                    } else {
+                        tracing::error!(new_uri_string, "Couldn't parse new uri");
                     }
+                    tracing::info!(upstream_url, new_uri_string, user.user_id, "Sending people to workshop");
 
                     // 2. Return the peer for the workshop pod
                     let peer = Box::new(HttpPeer::new(upstream_url, false, String::new()));

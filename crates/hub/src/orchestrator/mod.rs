@@ -379,7 +379,7 @@ impl Orchestrator {
 
     /// Build the proxy URL from a pod IP
     fn build_proxy_url(&self, pod_ip: &str) -> String {
-        format!("http://{}:{}", pod_ip, self.config.sidecar_proxy_port)
+        format!("{}:{}", pod_ip, self.config.sidecar_proxy_port)
     }
 
     /// 3. DELETE: Removes K8s resources and clears the map entry.

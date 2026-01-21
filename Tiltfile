@@ -40,25 +40,13 @@ build_flake_image(
     ]
 )
 
-# Build Sidecar image using nix flake
-build_flake_image(
-    'workshop-sidecar',
-    '.',
-    'workshop-sidecar',
-    deps=[
-        './crates/sidecar/src',
-        './crates/sidecar/Cargo.toml',
-        './Cargo.lock',
-    ]
-)
-
 # Deploy Hub infrastructure
 k8s_yaml('./crates/hub/workshop.yaml')
 
 k8s_resource('workshop-hub',
     port_forwards='8080:8080',
     labels=['hub'],
-    resource_deps=['ai-proxy', 'workshop-redis'],
+    resource_deps=['ai-proxy'],
 )
 
 # # ============================================================================
