@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from ultralytics import YOLO; YOLO('YOLO11n-cls.pt')"
 
 # Copy challenge assets
-COPY source_image.jpg .
+COPY nika.png .
 COPY notebook.ipynb .
 
 # Create a non-root user (Standard practice for Jupyter)
