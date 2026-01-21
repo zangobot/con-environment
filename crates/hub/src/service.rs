@@ -2,7 +2,7 @@ use askama::Template;
 use async_trait::async_trait;
 use axum::{
     Router,
-    extract::Path,
+    extract::{Path, Query},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
@@ -47,6 +47,11 @@ struct ErrorTemplate {
 pub struct AxumService {
     pub router: Router,
     pub addr: SocketAddr,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ErrorParams {
+    message: Option<String>,
 }
 
 impl AxumService {
@@ -166,15 +171,23 @@ async fn capacity_handler(Path(workshop_name): Path<String>) -> Result<Response,
 
 /// Workshop error page - shown when pod creation fails
 #[tracing::instrument(level = "debug", fields(workshop = %workshop_name))]
-async fn error_handler(Path(workshop_name): Path<String>) -> Result<Response, StatusCode> {
+async fn error_handler(
+    Path(workshop_name): Path<String>,
+    Query(params): Query<ErrorParams>, // Extract query params
+) -> Result<Response, StatusCode> {
     error!(
         workshop_name = %workshop_name,
         "Workshop error - serving error page"
     );
 
+    // Use the message from query params or a default fallback
+    let error_message = params.message.unwrap_or_else(|| 
+        "An error occurred while setting up your workshop environment. Please contact a staff member for assistance.".to_string()
+    );
+
     let template = ErrorTemplate {
         workshop_name: workshop_name.clone(),
-        error_message: "An error occurred while setting up your workshop environment. Please contact a staff member for assistance.".to_string(),
+        error_message, 
     };
 
     match template.render() {

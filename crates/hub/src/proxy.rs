@@ -110,7 +110,9 @@ impl ProxyHttp for WorkshopProxy {
                 }
                 Err(HubError::PodNotReady) => Some(format!("/workshop-pending/{}", workshop_name)),
                 Err(HubError::Error(error)) => {
-                    Some(format!("/workshop-error/{}", workshop_name))
+                    let encoded_error = serde_urlencoded::to_string([("message", error)])
+                        .unwrap_or_default();
+                    Some(format!("/workshop-error/{}?{}", workshop_name, encoded_error))
                 }
                 Err(HubError::WorkshopNotFound) => Some("/error-404".to_string()),
             };
