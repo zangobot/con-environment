@@ -8,7 +8,7 @@ use kube::{
     api::{DeleteParams, ListParams, PostParams},
 };
 use papaya::{Guard, HashMap};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{HubError, config};
 
@@ -123,7 +123,7 @@ impl Orchestrator {
                     labels.get(LABEL_USER_ID),
                     labels.get(LABEL_WORKSHOP_NAME),
                 ) {
-                    let session_key = format!("{}-{}", user_id, workshop_name);
+                    let session_key = format!("{}-{}", workshop_name, user_id);
 
                     // Update existing or insert new (Adoption)
                     self.pods.pin().update_or_insert_with(
@@ -339,7 +339,7 @@ impl Orchestrator {
                 let message = waiting.message.clone().unwrap_or_default();
 
                 match reason {
-                    "ContainerCreating" => return PodDiagnosis::ContainerCreating,
+                    "ContainerCreating" | "PodInitializing" => return PodDiagnosis::ContainerCreating,
                     "ErrImagePull" | "ImagePullBackOff" => {
                         return PodDiagnosis::ImagePullError(format!("{}: {}", reason, message));
                     }
@@ -423,7 +423,7 @@ impl Orchestrator {
             HubError::WorkshopNotFound
         })?;
 
-        let session_key = format!("{}-{}", user_id, workshop.name);
+        let session_key = format!("{}-{}", workshop.name, user_id);
         let guard = self.guard();
         match self.check_health(&session_key, &guard)
                 .await {
@@ -437,9 +437,10 @@ impl Orchestrator {
                         return Ok(url);
                     }
                     None => {
-                        // Pod exists but hasn't been assigned an IP yet.
-                        // It is likely in a Pending state.
-                        self.pods.remove(&session_key, &guard);
+                        tracing::warn!("Old pod has no IP, deleting and recreating");
+                        if let Err(e) = self.delete(&session_key).await {
+                            tracing::error!(?e, "Failed to delete stale pod");
+                        }
                     }
                 }
             }
@@ -456,16 +457,21 @@ impl Orchestrator {
             },
             Err(SidecarError::InvalidResponse(error)) => {
                 tracing::error!(?error, "Pod unhealthy, deleting and trying again");
-                self.pods.remove(&session_key, &guard);
+                if let Err(e) = self.delete(&session_key).await {
+                    tracing::error!(?e, "Failed to delete unhealthy");
+                }
             },
             Err(SidecarError::UnhealthyResponse(status)) => {
                 tracing::error!(?status, "Pod unhealthy, deleting and trying again");
-                self.pods.remove(&session_key, &guard);
+                if let Err(e) = self.delete(&session_key).await {
+                    tracing::error!(?e, "Failed to delete stale pod");
+                }
             },
         }
 
         // 2. SLOW PATH: Create New Pod
         // B. Check Global Limits
+        // We do not need a lock as if there's an extra 1 or 2 workshops, that is fine!
         if self.pods.len() >= self.config.workshop_pod_limit {
             return Err(HubError::PodLimitReached);
         }
@@ -513,10 +519,12 @@ impl Orchestrator {
             owner_ref,
             &self.config,
         );
-        if let Err(e) = self.svc_api.create(&PostParams::default(), &svc_spec).await {
-            tracing::error!(?e, "Service creation failed, rolling back pod");
-            let _ = self.pod_api.delete(&pod_name, &DeleteParams::default()).await;
-            return Err(HubError::Error(format!("Service creation failed: {}", e)));
+        if let Err(error) = self.svc_api.create(&PostParams::default(), &svc_spec).await {
+            tracing::error!(?error, "Service creation failed, rolling back pod");
+            if let Err(delete_err) = self.pod_api.delete(&pod_name, &DeleteParams::default()).await {
+                tracing::error!(?delete_err, "Failed to rollback pod after service creation failure");
+            }
+            return Err(HubError::Error(format!("Service creation failed: {}", error)));
         }
         self.pods.insert(session_key, ManagedPod::new(pod), &guard);
         Err(HubError::PodNotReady)
@@ -585,7 +593,7 @@ impl Orchestrator {
                     // We are above capacity, perform health check to verify idleness
                     match self.check_health(&session_key, &guard).await {
                         Ok(PodStatus::Healthy(_, _)) => {
-                            info!("GC: Skipping {} - health check shows active connection", session_key);
+                            debug!("GC: Skipping {} - fresh health check shows pod is not idle", session_key);
                             false
                         }
                         Ok(PodStatus::Old(_)) => {

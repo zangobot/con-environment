@@ -325,7 +325,7 @@ data:
     workshop_mem_request: "1Gi"
     workshop_mem_limit: "2Gi"
     sidecar_image: "ghcr.io/nbhdai/workshop-sidecar:latest"
-    garbarge_collection_seconds: 300
+    garbage_collection_seconds: 300
 ---
 apiVersion: v1
 kind: Secret

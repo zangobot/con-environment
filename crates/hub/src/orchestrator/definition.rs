@@ -113,6 +113,18 @@ pub fn create_workshop_pod_spec(
             period_seconds: Some(5),
             ..Default::default()
         }),
+        liveness_probe: Some(Probe {
+            http_get: Some(HTTPGetAction {
+                path: Some("/health".to_string()),
+                port: IntOrString::Int(config.sidecar_health_port as i32),
+                scheme: Some("HTTP".to_string()),
+                ..Default::default()
+            }),
+            initial_delay_seconds: Some(30),
+            period_seconds: Some(30),
+            failure_threshold: Some(3),
+            ..Default::default()
+        }),
         ..Default::default()
     };
 
