@@ -109,11 +109,6 @@ fn default_garbarge_collection_seconds() -> i64 {
     300
 }
 
-/// The annotation key we use to store the expiration time on a pod.
-pub const TTL_ANNOTATION: &str = "workshop-hub/ttl-expires-at";
-/// The label key for the workshop name.
-pub const LABEL_WORKSHOP_NAME: &str = "workshop-hub/workshop-name";
-
 impl Config {
     /// Loads configuration from environment variables.
     pub fn from_env() -> Self {

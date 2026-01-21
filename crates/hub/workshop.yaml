@@ -115,32 +115,39 @@ metadata:
   name: allow-hub-to-workshops
   namespace: workshop
 spec:
+  description: "Allow workshop pods to receive traffic from the hub"
   endpointSelector: {}
   ingress:
-    # Allow traffic from hub namespace
-    - fromNamespaces:
-        - workshop-hub-system
-      fromEndpoints:
+    - fromEndpoints:
         - matchLabels:
+            io.kubernetes.pod.namespace: workshop-hub-system
             app: workshop-hub
       toPorts:
         - ports:
-            - port: "8888"
+            - port: "8888"   # Sidecar proxy port
               protocol: TCP
-            - port: "9000"
+            - port: "9000"   # Sidecar health port  
               protocol: TCP
+    
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "9000"   # Health check port
+              protocol: TCP
+
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: allow-workshops-egress
-  namespace: workshop
+  name: allow-hub-egress-to-workshops
+  namespace: workshop-hub-system
 spec:
+  description: "Allow workshop-hub to reach workshop pods for proxying and health checks"
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/managed-by: workshop-hub
+      app: workshop-hub
   egress:
-    # Allow DNS
     - toEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: kube-system
@@ -149,15 +156,20 @@ spec:
         - ports:
             - port: "53"
               protocol: UDP
-    
-    # Allow internet access
-    - toEntities:
-        - world
-    
-    # Allow pod-to-pod in same namespace
+            - port: "53"
+              protocol: TCP
     - toEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: workshop
+      toPorts:
+        - ports:
+            - port: "8888"   # Sidecar proxy port
+              protocol: TCP
+            - port: "9000"   # Sidecar health port
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
@@ -183,8 +195,18 @@ metadata:
   name: allow-ai-proxy-egress
   namespace: workshop
 spec:
-  endpointSelector: {}
+  endpointSelector: {} # Matches ALL pods
   egress:
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+    toPorts:
+    - ports:
+      - port: "53"
+        protocol: UDP
+      - port: "53"
+        protocol: TCP
   - toEndpoints:
     - matchLabels:
         io.kubernetes.pod.namespace: default
@@ -200,6 +222,33 @@ spec:
       - port: "80"
         protocol: TCP
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-workshops-egress
+  namespace: workshop
+spec:
+  description: "Allow workshop pods to reach DNS, internet, and internal services"
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/managed-by: workshop-hub
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - world
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: workshop
+---            
 # =============================================================================
 # 4. Resource Limits & Configuration
 # =============================================================================
@@ -267,7 +316,7 @@ data:
     workshop_ttl_seconds: 3600
     workshop_idle_seconds: 600
     workshop_image: "traefik/whoami"
-    workshop_port: 8080
+    workshop_port: 80
     sidecar_proxy_port: 8888
     sidecar_health_port: 9000
     workshop_pod_limit: 10
@@ -276,7 +325,7 @@ data:
     workshop_mem_request: "1Gi"
     workshop_mem_limit: "2Gi"
     sidecar_image: "ghcr.io/nbhdai/workshop-sidecar:latest"
-    garbarge_collection_seconds: 30
+    garbarge_collection_seconds: 300
 ---
 apiVersion: v1
 kind: Secret

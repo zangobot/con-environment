@@ -1,12 +1,9 @@
-use crate::{auth, config::Config, orchestrator, HubError};
+use crate::{auth, HubError};
 use async_trait::async_trait;
 use axum::http::Uri;
 use pingora::prelude::*;
-use std::sync::Arc;
 
-pub struct WorkshopProxy {
-    pub config: Arc<Config>,
-}
+pub struct WorkshopProxy;
 
 #[async_trait]
 impl ProxyHttp for WorkshopProxy {
@@ -21,6 +18,7 @@ impl ProxyHttp for WorkshopProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
+        let orchestrator = crate::orchestrator().await;
         let cookie_header = session
             .req_header()
             .headers
@@ -28,10 +26,10 @@ impl ProxyHttp for WorkshopProxy {
             .map(|v| v.to_str().unwrap_or_default())
             .unwrap_or_default();
         let local_path = if let Some(user) = auth::validate_cookie(cookie_header) {
-            match orchestrator::get_or_create_pod(&user.user_id, self.config.clone()).await {
-                Ok(binding) => {
+            match orchestrator.get_or_create_pod(&user.user_id).await {
+                Ok(url) => {
                     let peer = Box::new(HttpPeer::new(
-                        binding.cluster_dns_name,
+                        url,
                         false,
                         String::new(),
                     ));

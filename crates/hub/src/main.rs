@@ -1,4 +1,3 @@
-use kube::Client;
 use pingora::prelude::*;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
@@ -14,13 +13,12 @@ mod service;
 
 pub use error::HubError;
 
-use crate::{gc::GarbageCollector, service::AxumService};
+use crate::{gc::GarbageCollector, orchestrator::Orchestrator, service::AxumService};
 
-pub static ONCE: OnceCell<Client> = OnceCell::const_new();
-async fn kube_client() -> Client {
-    ONCE.get_or_init(|| async { Client::try_default().await.expect("Kube client failed") })
+pub static ONCE: OnceCell<Orchestrator> = OnceCell::const_new();
+async fn orchestrator() -> &'static Orchestrator {
+    ONCE.get_or_init(|| async { Orchestrator::new().await })
         .await
-        .clone()
 }
 pub static SIDECAR: &'static str = "ghcr.io/nbhdai/workshop-sidecar:latest";
 
@@ -30,7 +28,7 @@ fn main() {
 
     tracing::info!("Config loaded: {:?}", config);
 
-    let gc = GarbageCollector::new(config.clone());
+    let gc = GarbageCollector;
     let service = AxumService::new();
 
     let mut my_server = Server::new(None).unwrap();
@@ -38,9 +36,7 @@ fn main() {
     my_server.add_service(background_service("garbage_collector", gc));
     my_server.add_service(service);
 
-    let proxy_logic = proxy::WorkshopProxy {
-        config: config.clone(),
-    };
+    let proxy_logic = proxy::WorkshopProxy;
 
     let mut lb = http_proxy_service(&my_server.configuration, proxy_logic);
 

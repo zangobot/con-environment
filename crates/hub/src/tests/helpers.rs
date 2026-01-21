@@ -1,5 +1,5 @@
 use super::config::{get_gc_test_config, get_test_config, validate_talos_environment};
-use crate::{config::Config, gc::GarbageCollector};
+use crate::{config::Config, gc::GarbageCollector, orchestrator::Orchestrator};
 use k8s_openapi::api::core::v1::{Namespace, Pod, Service};
 use kube::{
     api::{DeleteParams, ListParams, PostParams},
@@ -12,7 +12,8 @@ use std::time::Duration;
 
 /// Main test context that encapsulates all test dependencies
 pub struct TestContext {
-    pub config: Arc<Config>,
+    pub client: Client,
+    pub orchestrator: Orchestrator,
     pub test_namespace: String,
 }
 
@@ -26,10 +27,6 @@ impl TestContext {
     /// Create a test context optimized for GC testing
     pub async fn new_for_gc(test_name: &str) -> Self {
         Self::with_config(get_gc_test_config(), test_name).await
-    }
-
-    pub fn gc(&self) -> GarbageCollector {
-        GarbageCollector::new(self.config.clone())
     }
 
     /// Create a test context with a specific configuration
@@ -86,12 +83,14 @@ impl TestContext {
         config_clone.workshop_namespace = test_namespace.clone();
         // Make workshop_name unique to this namespace
         config_clone.workshop_name = format!("{}-test", config_clone.workshop_name);
-        let config = Arc::new(config_clone);
+        let config = config_clone;
+        let orchestrator = Orchestrator::with_config(config).await;
 
         tracing::debug!("Initializing HTTP client for test state");
 
         let ctx = Self {
-            config: config.clone(),
+            client,
+            orchestrator,
             test_namespace,
         };
 
