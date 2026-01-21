@@ -484,14 +484,19 @@ impl Orchestrator {
             &self.config,
             expires_at,
         );
-        let pod = self
+        let pod = match self
             .pod_api
-            .create(&PostParams::default(), &pod_spec)
-            .await
-            .map_err(|source| {
-                tracing::error!(?source, "Kubernetes error while creating pod");
-                HubError::Error(format!("Kubernetes error while creating pod {}", source))
-            })?;
+            .create(&PostParams::default(), &pod_spec).await {
+                Ok(pod) => pod,
+                Err(kube::Error::Api(error)) if error.code == 409 => {
+                    tracing::warn!(?error, "Duplicate create request");
+                    return Err(HubError::PodNotReady);
+                }
+                Err(error) => {
+                    tracing::error!(?error, "Kubernetes error while creating pod");
+                    return Err(HubError::Error(format!("Kubernetes error while creating pod {}", error)))
+                },
+            };
         info!("Created pod {}", pod_name);
 
         let owner_ref = OwnerReference {
