@@ -40,7 +40,7 @@ impl ProxyHttp for WorkshopProxy {
         } else {
             // If not logged in, allow the request ONLY if it is explicitly for the login page
             // or common static asset paths. Otherwise, redirect flow to login.
-            if path == "/aiv-workshop-login"
+            if path == "/workshop-login"
                 || path.starts_with("/public")
                 || path.starts_with("/assets")
             {
@@ -54,7 +54,7 @@ impl ProxyHttp for WorkshopProxy {
                 // Rewrite all other unauthed traffic to the login page
                 session
                     .req_header_mut()
-                    .set_uri(Uri::from_static("/aiv-workshop-login"));
+                    .set_uri(Uri::from_static("/workshop-login"));
                 return Ok(Box::new(HttpPeer::new(
                     "127.0.0.1:3000",
                     false,
@@ -105,8 +105,8 @@ impl ProxyHttp for WorkshopProxy {
                     let peer = Box::new(HttpPeer::new(upstream_url, false, String::new()));
                     return Ok(peer);
                 }
-                Err(HubError::PodLimitReached) => Some("/aiv-workshop-at-capacity"),
-                Err(HubError::PodNotReady) => Some("/aiv-workshop-pending"),
+                Err(HubError::PodLimitReached) => Some(format!("/workshop-at-capacity/{}", workshop_name)),
+                Err(HubError::PodNotReady) => Some(format!("/workshop-pending/{}", workshop_name)),
                 Err(HubError::KubeError { operation, source }) => {
                     tracing::error!(
                         "Orchestrator error for {}: {}: {:?}",
@@ -114,16 +114,22 @@ impl ProxyHttp for WorkshopProxy {
                         operation,
                         source
                     );
-                    Some("/aiv-workshop-error")
+                    Some(format!("/workshop-error/{}", workshop_name))
                 }
-                Err(HubError::WorkshopNotFound) => Some("/aiv-workshop-missing"),
+                Err(HubError::WorkshopNotFound) => Some("/error-404".to_string()),
             };
-
+            
             // If we are here, we have a local error path to handle
             if let Some(error_path) = local_error_path {
+                let uri = match Uri::try_from(error_path) {
+                    Ok(uri) => uri,
+                    Err(_) => {
+                        Uri::from_static("/workshop-error")
+                    },
+                };
                 session
                     .req_header_mut()
-                    .set_uri(Uri::from_static(error_path));
+                    .set_uri(uri);
                 return Ok(Box::new(HttpPeer::new(
                     "127.0.0.1:3000",
                     false,

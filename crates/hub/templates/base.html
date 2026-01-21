@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Workshop Hub{% endblock %}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #0f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        .centered {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .box {
+            border: 2px solid #0f0;
+            padding: 40px 30px;
+        }
+        
+        .box-sm {
+            border: 1px solid #0f0;
+            padding: 15px;
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            font-weight: normal;
+            margin-bottom: 30px;
+        }
+        
+        h2 {
+            font-size: 1.3rem;
+            font-weight: normal;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+        
+        a {
+            color: #0f0;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        .btn {
+            color: #0f0;
+            text-decoration: none;
+            border: 1px solid #0f0;
+            padding: 8px 16px;
+            display: inline-block;
+        }
+        
+        .btn:hover {
+            background: #0f0;
+            color: #000;
+            text-decoration: none;
+        }
+        
+        .divider {
+            border-top: 1px solid #0f0;
+            margin: 20px 0;
+        }
+        
+        .blink {
+            animation: blink 1s step-start infinite;
+        }
+        
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        
+        .opacity-70 {
+            opacity: 0.7;
+        }
+        
+        .opacity-80 {
+            opacity: 0.8;
+        }
+        
+        .mt-10 { margin-top: 10px; }
+        .mt-15 { margin-top: 15px; }
+        .mt-20 { margin-top: 20px; }
+        .mt-30 { margin-top: 30px; }
+        .mb-10 { margin-bottom: 10px; }
+        .mb-15 { margin-bottom: 15px; }
+        .mb-20 { margin-bottom: 20px; }
+        .mb-30 { margin-bottom: 30px; }
+        .mb-40 { margin-bottom: 40px; }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        {% block extra_style %}{% endblock %}
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    {% block body %}{% endblock %}
+</body>
+</html>
