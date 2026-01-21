@@ -15,6 +15,9 @@ pub enum HubError {
 
     #[error("Global pod limit reached")]
     PodLimitReached,
+
+    #[error("Global pod limit reached")]
+    WorkshopNotFound,
 }
 
 // We can implement IntoResponse for our error
@@ -33,6 +36,10 @@ impl axum::response::IntoResponse for HubError {
             HubError::PodLimitReached => (
                 axum::http::StatusCode::SERVICE_UNAVAILABLE,
                 "Service is at capacity, please try again later".to_string(),
+            ),
+            HubError::WorkshopNotFound => (
+                axum::http::StatusCode::NOT_FOUND,
+                "Workshop not found".to_string(),
             ),
         };
         (status, message).into_response()

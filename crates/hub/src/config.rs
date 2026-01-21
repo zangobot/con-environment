@@ -3,12 +3,22 @@ use std::path::Path;
 use serde::Deserialize;
 use tracing::{debug, info};
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct Workshop {
+    /// The public-facing name for this set of workshops.
+    pub name: String,
+    /// The container image to use for the workshop.
+    pub image: String,
+    /// The container image to use for the workshop.
+    pub description: String,
+}
+
 /// Top-level configuration loaded from environment variables.
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     /// The public-facing name for this set of workshops.
-    #[serde(default = "default_workshop_name")]
-    pub workshop_name: String,
+    #[serde(default = "default_workshop")]
+    pub workshops: Vec<Workshop>,
 
     /// Namespace where workshop pods and services will be created.
     #[serde(default = "default_workshop_namespace")]
@@ -21,11 +31,6 @@ pub struct Config {
     /// Max idle time in seconds before a pod is cleaned up.
     #[serde(default = "default_workshop_idle")]
     pub workshop_idle_seconds: i64,
-
-    // --- New Fields Below ---
-    /// The container image to use for the workshop.
-    #[serde(default = "default_workshop_image")]
-    pub workshop_image: String,
 
     /// The internal port the workshop container listens on.
     #[serde(default = "default_workshop_port")]
@@ -64,8 +69,19 @@ pub struct Config {
     pub garbage_collection_seconds: i64,
 }
 
-fn default_workshop_name() -> String {
-    "workshop".to_string()
+impl Config {
+    pub fn get_workshop(&self, workshop: &str) -> Option<&Workshop> {
+        self.workshops.iter().find(|w| &w.name == workshop)
+    }
+}
+
+fn default_workshop() -> Vec<Workshop> {
+    vec![Workshop {
+            name: "workshop".to_string(),
+            image: "traefik/whoami".to_string(),
+            description: "The host didn't finish setting this up".to_string(),
+    }]
+    
 }
 fn default_workshop_namespace() -> String {
     "default".to_string()
@@ -77,10 +93,7 @@ fn default_workshop_idle() -> i64 {
     60 * 60
 } // 1 hour
 
-// --- New Defaults Below ---
-fn default_workshop_image() -> String {
-    "nginx".to_string()
-} // Default to nginx
+
 fn default_workshop_port() -> u16 {
     80
 }

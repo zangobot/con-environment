@@ -2,6 +2,7 @@ use crate::{auth, HubError};
 use async_trait::async_trait;
 use axum::http::Uri;
 use pingora::prelude::*;
+use std::str::FromStr;
 
 pub struct WorkshopProxy;
 
@@ -18,41 +19,86 @@ impl ProxyHttp for WorkshopProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
-        let orchestrator = crate::orchestrator().await;
+        // Capture path and query for analysis
+        let path = session.req_header().uri.path().to_string();
+        let query = session.req_header().uri.query().map(|q| format!("?{}", q)).unwrap_or_default();
+
+        // Validate Cookie
         let cookie_header = session
             .req_header()
             .headers
             .get("Cookie")
             .map(|v| v.to_str().unwrap_or_default())
             .unwrap_or_default();
-        let local_path = if let Some(user) = auth::validate_cookie(cookie_header) {
-            match orchestrator.get_or_create_pod(&user.user_id).await {
-                Ok(url) => {
-                    let peer = Box::new(HttpPeer::new(
-                        url,
-                        false,
-                        String::new(),
-                    ));
-                    return Ok(peer);
-                }
-                Err(HubError::PodLimitReached) => "/aiv-workshop-at-capacity",
-                Err(HubError::PodNotReady) => "/aiv-workshop-pending",
-                Err(HubError::KubeError{ operation, source }) => {
-                    tracing::error!("Unhandled orchestrator error for {}, during: {}: {:?}", user.user_id, operation, source);
-                    "/aiv-workshop-error"
-                }
-            }
+        let user = if let Some(user) = auth::validate_cookie(cookie_header) {
+            user 
         } else {
-            "/aiv-workshop-login"
+            // If not logged in, allow the request ONLY if it is explicitly for the login page
+            // or common static asset paths. Otherwise, redirect flow to login.
+            if path == "/aiv-workshop-login" || path.starts_with("/public") || path.starts_with("/assets") {
+                // Pass through to local UI handler as-is
+                return Ok(Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new())));
+            } else {
+                // Rewrite all other unauthed traffic to the login page
+                session.req_header_mut().set_uri(Uri::from_static("/aiv-workshop-login"));
+                return Ok(Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new())));
+            }
         };
 
-        session
-            .req_header_mut()
-            .set_uri(Uri::from_static(local_path));
 
-        // 5. PROXY TO LOCAL AXUM
-        // Instead of failing, we successfully proxy to our internal UI
-        let peer = Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new()));
-        Ok(peer)
+        // 1. ROOT PATH HANDLER -> Send to Index
+        if path == "/" {
+            let index_uri = Uri::from_str(&format!("/index{}", query))
+                .unwrap_or_else(|_| Uri::from_static("/index"));
+            
+            session.req_header_mut().set_uri(index_uri);
+            return Ok(Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new())));
+        }
+
+        // 2. WORKSHOP HANDLER -> /workshop/<NAME>/...
+        if let Some(stripped_prefix) = path.strip_prefix("/workshop/") {
+            // Split path: "workshop_name/remainder"
+            // Example: "python-lab/notebooks/foo" -> name: "python-lab", target: "/notebooks/foo"
+            let (workshop_name, target_path) = match stripped_prefix.split_once('/') {
+                Some((name, rest)) => (name, format!("/{}", rest)),
+                None => (stripped_prefix, "/".to_string()), 
+            };
+
+            let orchestrator = crate::orchestrator().await;
+
+            // Determine if we get a Pod URL or a Local Error Path
+            // Pass the extracted workshop_name to the orchestrator
+            let local_error_path = match orchestrator.get_or_create_pod(&user.user_id, workshop_name).await {
+                Ok(upstream_url) => {
+                    // SUCCESS:
+                    // 1. Rewrite the URI to strip the prefix (e.g. /notebooks/foo?q=1)
+                    let new_uri_string = format!("{}{}", target_path, query);
+                    if let Ok(new_uri) = Uri::from_str(&new_uri_string) {
+                        session.req_header_mut().set_uri(new_uri);
+                    }
+
+                    // 2. Return the peer for the workshop pod
+                    let peer = Box::new(HttpPeer::new(upstream_url, false, String::new()));
+                    return Ok(peer);
+                }
+                Err(HubError::PodLimitReached) => Some("/aiv-workshop-at-capacity"),
+                Err(HubError::PodNotReady) => Some("/aiv-workshop-pending"),
+                Err(HubError::KubeError{ operation, source }) => {
+                    tracing::error!("Orchestrator error for {}: {}: {:?}", user.user_id, operation, source);
+                    Some("/aiv-workshop-error")
+                }
+                Err(HubError::WorkshopNotFound) => Some("/aiv-workshop-missing"),
+            };
+
+            // If we are here, we have a local error path to handle
+            if let Some(error_path) = local_error_path {
+                session.req_header_mut().set_uri(Uri::from_static(error_path));
+                return Ok(Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new())));
+            }
+        }
+
+        // 3. FALLBACK -> Send anything else to local provider as-is
+        // This handles CSS, JS, or other local routes not under /workshop
+        Ok(Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new())))
     }
 }

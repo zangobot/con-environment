@@ -21,7 +21,7 @@ async fn test_orchestrator_creates_pod_and_service() {
 
     // First call should trigger pod creation (returns PodNotReady since pod isn't running yet)
     info!("Calling get_or_create_pod for the first time");
-    let first_result = ctx.orchestrator.get_or_create_pod(user_id).await;
+    let first_result = ctx.orchestrator.get_or_create_pod(user_id, "workshop").await;
     trace!(result = ?first_result, "First get_or_create_pod result");
 
     // The orchestrator returns PodNotReady when a pod is created but not yet ready
@@ -49,7 +49,7 @@ async fn test_orchestrator_creates_pod_and_service() {
 
     // Second call for same user should be idempotent
     info!("Calling get_or_create_pod again (idempotency check)");
-    let second_result = ctx.orchestrator.get_or_create_pod(user_id).await;
+    let second_result = ctx.orchestrator.get_or_create_pod(user_id, "workshop").await;
     trace!(result = ?second_result, "Second get_or_create_pod result");
 
     // Pod count should remain the same
@@ -88,7 +88,7 @@ async fn test_pod_limit_enforcement() {
         let user_id = format!("limit-user-{}", i);
         debug!(user_id = %user_id, index = i, "Creating pod");
         
-        let result = ctx.orchestrator.get_or_create_pod(&user_id).await;
+        let result = ctx.orchestrator.get_or_create_pod(&user_id, "workshop").await;
         trace!(result = ?result, "Pod creation result");
         
         // Should either succeed or return PodNotReady (which means it was created)
@@ -118,7 +118,7 @@ async fn test_pod_limit_enforcement() {
     let over_limit_user = format!("limit-user-{}", pod_limit);
     info!(user_id = %over_limit_user, "Attempting to create pod over limit");
 
-    let over_limit_result = ctx.orchestrator.get_or_create_pod(&over_limit_user).await;
+    let over_limit_result = ctx.orchestrator.get_or_create_pod(&over_limit_user, "workshop").await;
     debug!(result = ?over_limit_result, "Over-limit creation result");
 
     match over_limit_result {
@@ -163,7 +163,7 @@ async fn test_concurrent_pod_creation() {
 
         let handle = tokio::spawn(async move {
             trace!(user_id = %user_id, "Task executing get_or_create_pod");
-            orch.get_or_create_pod(&user_id).await
+            orch.get_or_create_pod(&user_id, "workshop").await
         });
 
         handles.push(handle);
@@ -250,7 +250,7 @@ async fn test_orchestrator_state_recovery() {
     // The orchestrator should now be aware of this pod
     // Calling get_or_create_pod should find the existing pod
     info!("Calling get_or_create_pod after populate");
-    let result = ctx.orchestrator.get_or_create_pod(user_id).await;
+    let result = ctx.orchestrator.get_or_create_pod(user_id, "workshop").await;
     trace!(result = ?result, "get_or_create_pod result after recovery");
 
     // Should either return a URL (if healthy) or PodNotReady
@@ -282,7 +282,7 @@ async fn test_orchestrator_delete() {
 
     // Create a pod through the orchestrator
     info!("Creating pod through orchestrator");
-    let _ = ctx.orchestrator.get_or_create_pod(user_id).await;
+    let _ = ctx.orchestrator.get_or_create_pod(user_id, "workshop").await;
 
     // Wait a moment for resources to be created
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;

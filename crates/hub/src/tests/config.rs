@@ -1,5 +1,4 @@
-use crate::config::Config;
-use std::sync::Arc;
+use crate::config::{Config, Workshop};
 
 /// Validates that we're running in the correct test environment
 pub fn validate_talos_environment() -> Result<(), String> {
@@ -19,14 +18,21 @@ pub fn validate_talos_environment() -> Result<(), String> {
     Ok(())
 }
 
+fn test_workshops() -> Vec<Workshop> {
+    vec![Workshop {
+            name: "workshop".to_string(),
+            image: "traefik/whoami".to_string(),
+            description: "The host didn't finish setting this up".to_string(),
+    }]
+}
+
 /// Get base test configuration with reasonable defaults
-pub fn get_test_config() -> Arc<Config> {
-    Arc::new(Config {
-        workshop_name: "test-workshop".to_string(),
+pub fn get_test_config() -> Config {
+    Config {
+        workshops: test_workshops(),
         workshop_namespace: "test-workshops".to_string(), // Cross-namespace: workshops go here
         workshop_ttl_seconds: 600,                        // 10 minutes
         workshop_idle_seconds: 120,                       // 2 minutes
-        workshop_image: "nginxdemos/hello".to_string(),
         workshop_port: 80,
         workshop_pod_limit: 10,
         workshop_cpu_request: "50m".to_string(),
@@ -36,17 +42,16 @@ pub fn get_test_config() -> Arc<Config> {
         sidecar_health_port: 9000,
         sidecar_proxy_port: 8888,
         garbage_collection_seconds: 300,
-    })
+    }
 }
 
 /// Get configuration optimized for GC tests (shorter timeouts)
-pub fn get_gc_test_config() -> Arc<Config> {
-    Arc::new(Config {
-        workshop_name: "gc-test-workshop".to_string(),
+pub fn get_gc_test_config() -> Config {
+    Config {
+        workshops: test_workshops(),
         workshop_namespace: "test-workshops".to_string(), // Cross-namespace
         workshop_ttl_seconds: 0,
         workshop_idle_seconds: 0,
-        workshop_image: "nginxdemos/hello".to_string(),
         workshop_port: 80,
         workshop_pod_limit: 5,
         workshop_cpu_request: "50m".to_string(),
@@ -56,5 +61,5 @@ pub fn get_gc_test_config() -> Arc<Config> {
         sidecar_health_port: 9000,
         sidecar_proxy_port: 8888,
         garbage_collection_seconds: 300,
-    })
+    }
 }

@@ -14,24 +14,22 @@ pub struct SidecarHealth {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ManagedPod {
+    pod: Pod,
     created: DateTime<Utc>,
     updated: DateTime<Utc>,
-    k_pod: Option<Pod>,
     health: Option<SidecarHealth>,
 }
 
-impl Default for ManagedPod {
-    fn default() -> Self {
-        Self { 
-            created: SystemTime::UNIX_EPOCH.into(),
-            updated: SystemTime::UNIX_EPOCH.into(),
-            k_pod: None,
-            health: None
+impl ManagedPod {
+    pub fn new(pod: Pod) -> Self {
+        Self {
+            pod,
+            created: Utc::now(),
+            updated: Utc::now(),
+            health: None,
         }
     }
-}
 
-impl ManagedPod {
     /// Returns true if the pod has been created (timestamp is not 1970).
     pub fn is_alive(&self) -> bool {
         let epoch: DateTime<Utc> = SystemTime::UNIX_EPOCH.into();
@@ -65,7 +63,7 @@ impl ManagedPod {
 
     /// Updates the Pod and refreshes the updated timestamp.
     pub fn set_pod(&mut self, pod: Pod) {
-        self.k_pod = Some(pod);
+        self.pod = pod;
         self.updated = Utc::now();
     }
 
@@ -80,12 +78,11 @@ impl ManagedPod {
         let epoch: DateTime<Utc> = SystemTime::UNIX_EPOCH.into();
         self.created = epoch;
         self.updated = epoch;
-        self.k_pod = None;
         self.health = None;
     }
 
-    pub fn pod(&self) -> Option<&Pod> {
-        self.k_pod.as_ref()
+    pub fn pod(&self) -> &Pod {
+        &self.pod
     }
 
     pub fn health(&self) -> Option<&SidecarHealth> {

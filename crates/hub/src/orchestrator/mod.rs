@@ -74,9 +74,8 @@ impl Orchestrator {
     /// Lists all pods in the namespace and ensures they exist in the HashMap.
     pub async fn populate(&self) -> Result<(), HubError> {
         let list_params = ListParams::default().labels(&format!(
-            "{}={},{}={}",
+            "{}={}",
             LABEL_MANAGED_BY, HUB_ID,
-            LABEL_WORKSHOP_NAME, &self.config.workshop_name
         ));
 
         let k_pods = self.pod_api.list(&list_params).await.map_err(|source| {
@@ -97,9 +96,8 @@ impl Orchestrator {
                         mp
                     },
                     || {
-                        let mut mp = ManagedPod::default();
-                        mp.set_pod(k_pod.clone());
-                        mp
+                        // Assuming ManagedPod::new(Pod) exists now that Option is removed
+                        ManagedPod::new(k_pod.clone())
                     },
                 );
             }
@@ -109,11 +107,11 @@ impl Orchestrator {
 
     pub async fn check_health<'guard>(
         &self,
-        user_id: &str,
+        session_key: &str,
         guard: &'guard impl Guard,
     ) -> Result<PodStatus, KubeError> {
         // 1. Look up managed pod
-        let mp = match self.pods.get(user_id, guard) {
+        let mp = match self.pods.get(session_key, guard) {
             Some(mp) => mp.clone(),
             None => return Ok(PodStatus::Missing),
         };
@@ -123,14 +121,9 @@ impl Orchestrator {
             return Ok(status);
         }
 
-        // 3. Ensure we have a pod (recover from K8s if needed)
-        let mp = match self.ensure_pod_loaded(user_id, &mp, guard).await? {
-            Some(mp) => mp,
-            None => return Ok(PodStatus::Missing),
-        };
-
-        // 4. Perform actual health check
-        Ok(self.perform_health_check(user_id, &mp, guard).await)
+        // 3. Perform actual health check
+        // Note: ensure_pod_loaded removal - Pod is guaranteed to be in ManagedPod
+        Ok(self.perform_health_check(session_key, &mp, guard).await)
     }
 
     /// Fast path: if we checked recently and pod has an IP, skip the health call
@@ -138,7 +131,9 @@ impl Orchestrator {
         const FRESHNESS_DIVISOR: i64 = 4;
         let freshness_threshold = self.config.workshop_idle_seconds / FRESHNESS_DIVISOR;
 
-        let pod = mp.pod()?;
+        // No need to unwrap Option<Pod>, it is guaranteed to exist
+        let pod = mp.pod();
+        
         if mp.idle() >= freshness_threshold {
             return None; // Cache is stale, need fresh check
         }
@@ -148,62 +143,17 @@ impl Orchestrator {
         Some(PodStatus::Healthy(pod.clone(), url))
     }
 
-    /// If ManagedPod has no pod data, try to recover it from K8s
-    async fn ensure_pod_loaded<'guard>(
-        &self,
-        user_id: &str,
-        mp: &'guard ManagedPod,
-        guard: &'guard impl Guard,
-    ) -> Result<Option<&'guard ManagedPod>, KubeError> {
-        // Already have pod data
-        if mp.pod().is_some() {
-            return Ok(Some(mp));
-        }
-
-        // Try to recover from K8s
-        let list_params = ListParams::default().labels(&format!(
-            "{}={},{}={},{}={}",
-            LABEL_USER_ID, user_id,
-            LABEL_WORKSHOP_NAME, &self.config.workshop_name,
-            LABEL_MANAGED_BY, HUB_ID
-        ));
-
-        let k_pod = match self.pod_api.list(&list_params).await?.items.pop() {
-            Some(pod) => pod,
-            None => {
-                warn!("Pod for user {} in memory but missing in K8s", user_id);
-                return Ok(None);
-            }
-        };
-
-        info!("Recovered existing K8s pod for user {}", user_id);
-        // This returns the updated value
-        let updated = self.pods.update(
-            user_id.to_string(),
-            |mp| {
-                let mut mp = mp.clone();
-                mp.set_pod(k_pod.clone());
-                mp
-            },
-            guard,
-        );
-
-        Ok(updated)
-    }
-
     /// Actually call the sidecar health endpoint and update state
     async fn perform_health_check<'guard>(
         &self,
-        user_id: &str,
+        session_key: &str,
         mp: &ManagedPod,
         guard: &'guard impl Guard,
     ) -> PodStatus {
-        let pod = match mp.pod() {
-            Some(p) => p,
-            None => return PodStatus::Missing,
-        };
+        // Direct access, no match needed
+        let pod = mp.pod();
 
-        let (health, pod_ip) = match self.query_sidecar_health(user_id, pod).await {
+        let (health, pod_ip) = match self.query_sidecar_health(session_key, pod).await {
             Some(result) => result,
             None => return PodStatus::Unhealthy(mp.clone()),
         };
@@ -211,7 +161,7 @@ impl Orchestrator {
         // Update cached health state
         let mut updated_mp = mp.clone();
         updated_mp.set_health(health);
-        self.pods.insert(user_id.to_string(), updated_mp.clone(), guard);
+        self.pods.insert(session_key.to_string(), updated_mp.clone(), guard);
 
         // Check if pod has exceeded idle timeout
         if updated_mp.idle() >= self.config.workshop_idle_seconds {
@@ -225,7 +175,7 @@ impl Orchestrator {
     /// Query the sidecar's health endpoint
     async fn query_sidecar_health(
         &self,
-        user_id: &str,
+        session_key: &str,
         pod: &Pod,
     ) -> Option<(SidecarHealth, String)> {
         let pod_ip = pod.status.as_ref()?.pod_ip.as_ref()?;
@@ -237,20 +187,20 @@ impl Orchestrator {
         let resp = match self.http_client.get(&url).send().await {
             Ok(r) => r,
             Err(e) => {
-                warn!("Sidecar unreachable for {} ({}): {}", user_id, url, e);
+                warn!("Sidecar unreachable for {} ({}): {}", session_key, url, e);
                 return None;
             }
         };
 
         if !resp.status().is_success() {
-            warn!("Health check returned {} for {}", resp.status(), user_id);
+            warn!("Health check returned {} for {}", resp.status(), session_key);
             return None;
         }
 
         match resp.json::<SidecarHealth>().await {
             Ok(health) => Some((health, pod_ip.clone())),
             Err(e) => {
-                warn!("Failed to parse health JSON for {}: {}", user_id, e);
+                warn!("Failed to parse health JSON for {}: {}", session_key, e);
                 None
             }
         }
@@ -267,7 +217,8 @@ impl Orchestrator {
         let pod_name = {
             let guard = self.pods.pin();
             match guard.get(user_id) {
-                Some(mp) => mp.pod().map(|p| p.name_any()),
+                // Direct access to pod()
+                Some(mp) => Some(mp.pod().name_any()),
                 None => return Ok(()), // Already gone
             }
         };
@@ -290,38 +241,38 @@ impl Orchestrator {
     }
 
     /// Retrieves an existing pod, recovers state from K8s if missing, or creates a new one.
-    pub async fn get_or_create_pod(&self, user_id: &str) -> Result<String, HubError> {
+    pub async fn get_or_create_pod(&self, user_id: &str, workshop_name: &str) -> Result<String, HubError> {
         // 1. FAST PATH: Check In-Memory Map
-        // We use a separate scope to ensure the guard is dropped before awaiting any async calls.
+        let workshop = self.config.get_workshop(workshop_name)
+        .ok_or_else(|| {
+            tracing::error!("Unknown workshop requested: {}", workshop_name);
+            HubError::WorkshopNotFound
+        })?;
+
+        let session_key = format!("{}-{}", user_id, workshop.name);
         let guard = self.guard();
         match {
-            self.check_health(user_id, &guard).await.map_err(|source| {
+            self.check_health(&session_key, &guard).await.map_err(|source| {
                 HubError::KubeError { operation: "get_or_create_pod", source }
             })?
         } {
             PodStatus::Healthy(_ , url) => return Ok(url),
             PodStatus::Old(mp) => {
                 // Old pod that wasn't cleaned up yet
-                match mp.pod() {
-                    Some(pod) => {
-                        match pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
-                            Some(pod_ip) => {
-                                let url = format!(
-                                    "http://{}:{}",
-                                    pod_ip, self.config.sidecar_proxy_port
-                                );
-                                return Ok(url);
-                            },
-                            None => {
-                                // Pod exists in k8s/memory but hasn't been assigned an IP yet.
-                                // It is likely in a Pending state.
-                                self.pods.remove(user_id, &guard);
-                            }
-                        }
+                let pod = mp.pod();
+                match pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
+                    Some(pod_ip) => {
+                        let url = format!(
+                            "http://{}:{}",
+                            pod_ip, self.config.sidecar_proxy_port
+                        );
+                        return Ok(url);
                     },
                     None => {
+                        // Pod exists but hasn't been assigned an IP yet.
+                        // It is likely in a Pending state.
                         self.pods.remove(user_id, &guard);
-                    },
+                    }
                 }
             }
             PodStatus::Unhealthy(_) | PodStatus::UnreachableError => return Err(HubError::PodNotReady),
@@ -338,10 +289,10 @@ impl Orchestrator {
         }
 
         // C. Create Resources
-        let pod_name = format!("workshop-{}-{}", user_id, generate_suffix());
+        let pod_name = format!("{}-{}-{}", workshop_name, user_id, generate_suffix());
         let expires_at = Utc::now().timestamp() + self.config.workshop_ttl_seconds;
 
-        let pod_spec = create_workshop_pod_spec(&pod_name, user_id, &self.config, expires_at);
+        let pod_spec = create_workshop_pod_spec(&pod_name, user_id, workshop_name, &workshop.image, &self.config, expires_at);
         let pod = self.pod_api.create(&PostParams::default(), &pod_spec).await.map_err(|source| {
                 HubError::KubeError { operation: "get_or_create_pod", source }
             })?;
@@ -355,92 +306,92 @@ impl Orchestrator {
             ..Default::default()
         };
 
-        let svc_spec = create_workshop_service_spec(&pod_name, &pod_name, user_id, &self.config.workshop_name, owner_ref, &self.config);
+        let svc_spec = create_workshop_service_spec(&pod_name, &pod_name, user_id, workshop_name, owner_ref, &self.config);
         self.svc_api.create(&PostParams::default(), &svc_spec).await.map_err(|source| {
                 HubError::KubeError { operation: "get_or_create_pod", source }
             })?;
 
-        self.pods.insert(user_id.to_string(), ManagedPod::default(), &guard);
+        self.pods.insert(session_key, ManagedPod::new(pod), &guard);
         Err(HubError::PodNotReady)
     }
 
-/// 4. GARBAGE COLLECTION: Removes expired or idle pods.
-pub async fn gc(&self) -> Result<usize, HubError> {
-    let mut candidates = Vec::new();
-    let now = Utc::now().timestamp();
+    /// 4. GARBAGE COLLECTION: Removes expired or idle pods.
+    pub async fn gc(&self) -> Result<usize, HubError> {
+        let mut candidates = Vec::new();
+        let now = Utc::now().timestamp();
         let guard = self.pods.owned_guard();
 
-    // 1. SCAN: Identify candidates (Fast, Lock-free read)
-    for (user_id, mp) in self.pods.iter(&guard) {
-        let is_idle = mp.idle() > self.config.workshop_idle_seconds;
+        // 1. SCAN: Identify candidates (Fast, Lock-free read)
+        for (user_id, mp) in self.pods.iter(&guard) {
+            let is_idle = mp.idle() > self.config.workshop_idle_seconds;
 
-        let is_expired = mp
-            .pod()
-            .and_then(|pod| pod.metadata.annotations.as_ref())
-            .and_then(|ann| ann.get(TTL_ANNOTATION))
-            .and_then(|t| t.parse::<i64>().ok())
-            .map(|expires_at| now > expires_at)
-            .unwrap_or(false);
+            // Direct access to pod(), no unwrapping needed
+            let is_expired = mp.pod()
+                .metadata.annotations.as_ref()
+                .and_then(|ann| ann.get(TTL_ANNOTATION))
+                .and_then(|t| t.parse::<i64>().ok())
+                .map(|expires_at| now > expires_at)
+                .unwrap_or(false);
 
-        if is_idle || is_expired {
-            candidates.push((user_id.clone(), is_expired));
-        }
-    }
-
-    // 2. VERIFY & PURGE: Health check before deletion
-    let mut deleted_count = 0;
-
-    for (user_id, is_expired) in candidates {
-        // Expired pods get deleted regardless of health
-        if !is_expired {
-            // For idle pods, do a fresh health check - an active connection
-            // may have kept the pod alive without updating our cached state
-            match self.check_health(&user_id, &guard).await {
-                Ok(PodStatus::Healthy(_, _)) => {
-                    info!(
-                        "GC: Skipping {} - health check shows active connection",
-                        user_id
-                    );
-                    continue;
-                }
-                Ok(PodStatus::Old(_)) => {
-                    // Still old after fresh check, proceed with deletion
-                }
-                Ok(PodStatus::Unhealthy(_)) => {
-                    // Unhealthy pods should be cleaned up
-                }
-                Ok(PodStatus::Missing | PodStatus::PodMissing) => {
-                    // Already gone, just clean up map entry
-                }
-                Ok(PodStatus::UnreachableError) | Err(_) => {
-                    // Can't reach pod - skip for now, try again next cycle
-                    warn!(
-                        "GC: Skipping {} - couldn't verify health, will retry",
-                        user_id
-                    );
-                    continue;
-                }
+            if is_idle || is_expired {
+                candidates.push((user_id.clone(), is_expired));
             }
         }
 
-        info!(
-            "GC: Deleting {} (expired: {})",
-            user_id, is_expired
-        );
+        // 2. VERIFY & PURGE: Health check before deletion
+        let mut deleted_count = 0;
 
-        if let Err(e) = self.delete(&user_id).await {
-            tracing::error!("GC: Failed to delete session for {}: {}", user_id, e);
-        } else {
-            deleted_count += 1;
+        for (session_key, is_expired) in candidates {
+            // Expired pods get deleted regardless of health
+            if !is_expired {
+                // For idle pods, do a fresh health check - an active connection
+                // may have kept the pod alive without updating our cached state
+                match self.check_health(&session_key, &guard).await {
+                    Ok(PodStatus::Healthy(_, _)) => {
+                        info!(
+                            "GC: Skipping {} - health check shows active connection",
+                            session_key
+                        );
+                        continue;
+                    }
+                    Ok(PodStatus::Old(_)) => {
+                        // Still old after fresh check, proceed with deletion
+                    }
+                    Ok(PodStatus::Unhealthy(_)) => {
+                        // Unhealthy pods should be cleaned up
+                    }
+                    Ok(PodStatus::Missing | PodStatus::PodMissing) => {
+                        // Already gone, just clean up map entry
+                    }
+                    Ok(PodStatus::UnreachableError) | Err(_) => {
+                        // Can't reach pod - skip for now, try again next cycle
+                        warn!(
+                            "GC: Skipping {} - couldn't verify health, will retry",
+                            session_key
+                        );
+                        continue;
+                    }
+                }
+            }
+
+            info!(
+                "GC: Deleting {} (expired: {})",
+                session_key, is_expired
+            );
+
+            if let Err(e) = self.delete(&session_key).await {
+                tracing::error!("GC: Failed to delete session for {}: {}", session_key, e);
+            } else {
+                deleted_count += 1;
+            }
         }
-    }
 
-    if deleted_count > 0 {
-        info!("GC: Completed. Cleaned up {} sessions.", deleted_count);
-    }
+        if deleted_count > 0 {
+            info!("GC: Completed. Cleaned up {} sessions.", deleted_count);
+        }
 
-    Ok(deleted_count)
-}
+        Ok(deleted_count)
+    }
 }
 
 
@@ -459,12 +410,14 @@ fn generate_suffix() -> String {
 fn create_workshop_pod_spec(
     pod_name: &str,
     user_id: &str,
+    workshop_name: &str, 
+    image: &str,
     config: &config::Config,
     expires_at_timestamp: i64,
 ) -> Pod {
     let mut labels = BTreeMap::new();
     labels.insert(LABEL_USER_ID.to_string(), user_id.to_string());
-    labels.insert(LABEL_WORKSHOP_NAME.to_string(), config.workshop_name.clone());
+    labels.insert(LABEL_WORKSHOP_NAME.to_string(), workshop_name.to_string());
     labels.insert(LABEL_MANAGED_BY.to_string(), HUB_ID.to_string());
     labels.insert("app".to_string(), pod_name.to_string());
 
@@ -484,7 +437,7 @@ fn create_workshop_pod_spec(
             "containers": [
                 {
                     "name": "workshop",
-                    "image": config.workshop_image,
+                    "image": image,
                     "imagePullPolicy": "Always",
                     "ports": [{"containerPort": config.workshop_port}],
                     "resources": {

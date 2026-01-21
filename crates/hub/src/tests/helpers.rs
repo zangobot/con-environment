@@ -46,12 +46,7 @@ impl TestContext {
         Self::with_config(get_gc_test_config(), test_name).await
     }
 
-    /// Create a test context with a specific configuration.
-    #[tracing::instrument(level = "debug", skip(config), fields(
-        test_name = %test_name,
-        workshop_name = %config.workshop_name
-    ))]
-    async fn with_config(config: Arc<Config>, test_name: &str) -> Self {
+    async fn with_config(mut config: Config, test_name: &str) -> Self {
         trace!("Validating Talos environment");
         validate_talos_environment()
             .expect("Not running in Talos environment. See README for setup instructions.");
@@ -103,18 +98,17 @@ impl TestContext {
         }
 
         // Update config to use this namespace
-        let mut config_clone = (*config).clone();
-        config_clone.workshop_namespace = test_namespace.clone();
+        config.workshop_namespace = test_namespace.clone();
         // Make workshop_name unique to this namespace
-        config_clone.workshop_name = format!("{}-test", config_clone.workshop_name);
+        config.workshops[0].name = format!("{}-test", config.workshops[0].name);
         debug!(
-            workshop_name = %config_clone.workshop_name,
-            workshop_namespace = %config_clone.workshop_namespace,
+            workshop_name = %config.workshops[0].name,
+            workshop_namespace = %config.workshop_namespace,
             "Updated config for test context"
         );
 
         trace!("Creating orchestrator with test config");
-        let orchestrator = Arc::new(Orchestrator::with_config(config_clone).await);
+        let orchestrator = Arc::new(Orchestrator::with_config(config).await);
 
         let ctx = Self {
             client,
@@ -198,13 +192,13 @@ impl TestContext {
 
         let pod_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.config().workshop_namespace);
 
-        let pod_name = format!("{}-{}", self.config().workshop_name, user_id);
+        let pod_name = format!("{}-{}", self.config().workshops[0].name, user_id);
 
         let mut labels = BTreeMap::new();
         labels.insert("workshop-hub/user-id".to_string(), user_id.to_string());
         labels.insert(
             "workshop-hub/workshop-name".to_string(),
-            self.config().workshop_name.clone(),
+            self.config().workshops[0].name.clone(),
         );
         labels.insert(
             "app.kubernetes.io/managed-by".to_string(),
@@ -226,7 +220,7 @@ impl TestContext {
             "spec": {
                 "containers": [{
                     "name": "workshop",
-                    "image": self.config().workshop_image,
+                    "image": self.config().workshops[0].image,
                     "ports": [{
                         "containerPort": self.config().workshop_port
                     }],
@@ -261,8 +255,8 @@ impl TestContext {
         let svc_api: Api<Service> =
             Api::namespaced(self.client.clone(), &self.config().workshop_namespace);
 
-        let service_name = format!("{}-{}", self.config().workshop_name, user_id);
-        let pod_name = format!("{}-{}", self.config().workshop_name, user_id);
+        let service_name = format!("{}-{}", self.config().workshops[0].name, user_id);
+        let pod_name = format!("{}-{}", self.config().workshops[0].name, user_id);
 
         debug!(
             service_name = %service_name,
@@ -338,7 +332,7 @@ impl TestContext {
 
         let label_selector = format!(
             "app.kubernetes.io/managed-by=workshop-hub,workshop-hub/workshop-name={}",
-            self.config().workshop_name
+            self.config().workshops[0].name
         );
         trace!(label_selector = %label_selector, "Using label selector");
 

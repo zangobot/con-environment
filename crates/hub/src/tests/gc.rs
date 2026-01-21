@@ -38,7 +38,7 @@ async fn test_gc_cleans_up_idle_pods() {
         .await
         .expect("Failed to create test service");
 
-    let service_name = format!("{}-idle-user", ctx.config().workshop_name);
+    let service_name = format!("{}-idle-user", "workshop");
     debug!(service_name = %service_name, "Service name");
 
     // Populate orchestrator state
@@ -114,7 +114,7 @@ async fn test_gc_respects_ttl() {
     labels.insert("workshop-hub/user-id".to_string(), "ttl-user".to_string());
     labels.insert(
         "workshop-hub/workshop-name".to_string(),
-        ctx.config().workshop_name.clone(),
+        "workshop".to_string(),
     );
     labels.insert(
         "app.kubernetes.io/managed-by".to_string(),
@@ -277,7 +277,7 @@ async fn test_gc_handles_missing_health_endpoint() {
     labels.insert("workshop-hub/user-id".to_string(), "no-health".to_string());
     labels.insert(
         "workshop-hub/workshop-name".to_string(),
-        ctx.config().workshop_name.clone(),
+        "workshop".to_string(),
     );
     labels.insert(
         "app.kubernetes.io/managed-by".to_string(),
@@ -357,7 +357,7 @@ async fn test_gc_cleans_failed_pods() {
     );
     labels.insert(
         "workshop-hub/workshop-name".to_string(),
-        ctx.config().workshop_name.clone(),
+        "workshop".to_string(),
     );
     labels.insert(
         "app.kubernetes.io/managed-by".to_string(),
