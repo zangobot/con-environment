@@ -105,31 +105,23 @@ impl ProxyHttp for WorkshopProxy {
                     let peer = Box::new(HttpPeer::new(upstream_url, false, String::new()));
                     return Ok(peer);
                 }
-                Err(HubError::PodLimitReached) => Some(format!("/workshop-at-capacity/{}", workshop_name)),
+                Err(HubError::PodLimitReached) => {
+                    Some(format!("/workshop-at-capacity/{}", workshop_name))
+                }
                 Err(HubError::PodNotReady) => Some(format!("/workshop-pending/{}", workshop_name)),
-                Err(HubError::KubeError { operation, source }) => {
-                    tracing::error!(
-                        "Orchestrator error for {}: {}: {:?}",
-                        user.user_id,
-                        operation,
-                        source
-                    );
+                Err(HubError::Error(error)) => {
                     Some(format!("/workshop-error/{}", workshop_name))
                 }
                 Err(HubError::WorkshopNotFound) => Some("/error-404".to_string()),
             };
-            
+
             // If we are here, we have a local error path to handle
             if let Some(error_path) = local_error_path {
                 let uri = match Uri::try_from(error_path) {
                     Ok(uri) => uri,
-                    Err(_) => {
-                        Uri::from_static("/workshop-error")
-                    },
+                    Err(_) => Uri::from_static("/workshop-error"),
                 };
-                session
-                    .req_header_mut()
-                    .set_uri(uri);
+                session.req_header_mut().set_uri(uri);
                 return Ok(Box::new(HttpPeer::new(
                     "127.0.0.1:3000",
                     false,

@@ -19,6 +19,10 @@ impl BackgroundService for GarbageCollector {
 
         let mut interval = tokio::time::interval(gc_interval);
         // First tick completes immediately; skip it to avoid running GC on startup
+        match orchestrator.populate().await {
+            Ok(_) => info!("GC: Populated the initial list"),
+            Err(e) => tracing::error!("GC: Populate failed: {}", e),
+        }
         interval.tick().await;
 
         loop {

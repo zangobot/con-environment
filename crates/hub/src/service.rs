@@ -1,3 +1,4 @@
+use askama::Template;
 use async_trait::async_trait;
 use axum::{
     Router,
@@ -5,7 +6,6 @@ use axum::{
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
-use askama::Template;
 use pingora::server::Fds;
 use reqwest::StatusCode;
 use std::{net::SocketAddr, sync::Arc};
@@ -14,7 +14,7 @@ use tokio::{
     sync::{Mutex, watch::Receiver},
 };
 use tower_cookies::CookieManagerLayer;
-use tracing::{debug, info, trace, warn, error};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{auth, config::Workshop, orchestrator};
 
@@ -53,10 +53,10 @@ impl AxumService {
     #[tracing::instrument(level = "info")]
     pub fn new() -> Self {
         info!("Initializing Axum service");
-        
+
         let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
         debug!(?addr, "Service will bind to address");
-        
+
         let router = Router::new()
             .route("/index", get(index_handler))
             .route("/workshop-login", post(auth::handle_login))
@@ -64,9 +64,9 @@ impl AxumService {
             .route("/workshop-at-capacity/{name}", get(capacity_handler))
             .route("/workshop-error", get(error_handler))
             .layer(CookieManagerLayer::new());
-        
+
         info!("Axum service router configured with routes");
-        
+
         Self { router, addr }
     }
 }
@@ -75,17 +75,20 @@ impl AxumService {
 #[tracing::instrument(level = "debug")]
 async fn index_handler() -> Result<Response, StatusCode> {
     info!("Loading workshop index page");
-    
+
     let orchestrator = match orchestrator().await {
         orch => {
             debug!("Orchestrator instance retrieved");
             orch
         }
     };
-    
+
     let workshops = orchestrator.config.workshops.clone();
-    info!(workshop_count = workshops.len(), "Retrieved workshop configurations");
-    
+    info!(
+        workshop_count = workshops.len(),
+        "Retrieved workshop configurations"
+    );
+
     for workshop in &workshops {
         trace!(
             workshop_name = %workshop.name,
@@ -93,9 +96,9 @@ async fn index_handler() -> Result<Response, StatusCode> {
             "Workshop available"
         );
     }
-    
+
     let template = IndexTemplate { workshops };
-    
+
     match template.render() {
         Ok(html) => {
             debug!("Successfully rendered index template");
@@ -112,11 +115,11 @@ async fn index_handler() -> Result<Response, StatusCode> {
 #[tracing::instrument(level = "debug", fields(workshop = %workshop_name))]
 async fn pending_handler(Path(workshop_name): Path<String>) -> Result<Response, StatusCode> {
     info!(workshop_name = %workshop_name, "Serving workshop pending page");
-    
+
     let template = PendingTemplate {
         workshop_name: workshop_name.clone(),
     };
-    
+
     match template.render() {
         Ok(html) => {
             debug!(workshop_name = %workshop_name, "Successfully rendered pending template");
@@ -140,11 +143,11 @@ async fn capacity_handler(Path(workshop_name): Path<String>) -> Result<Response,
         workshop_name = %workshop_name,
         "Workshop at capacity - serving capacity page"
     );
-    
+
     let template = AtCapacityTemplate {
         workshop_name: workshop_name.clone(),
     };
-    
+
     match template.render() {
         Ok(html) => {
             debug!(workshop_name = %workshop_name, "Successfully rendered capacity template");
@@ -168,12 +171,12 @@ async fn error_handler(Path(workshop_name): Path<String>) -> Result<Response, St
         workshop_name = %workshop_name,
         "Workshop error - serving error page"
     );
-    
+
     let template = ErrorTemplate {
         workshop_name: workshop_name.clone(),
         error_message: "An error occurred while setting up your workshop environment. Please contact a staff member for assistance.".to_string(),
     };
-    
+
     match template.render() {
         Ok(html) => {
             debug!(workshop_name = %workshop_name, "Successfully rendered error template");
@@ -201,7 +204,7 @@ impl pingora::services::Service for AxumService {
         _listeners_per_fd: usize,
     ) {
         info!(addr = %self.addr, "Starting Axum service");
-        
+
         let listener = match tokio::net::TcpListener::bind(self.addr).await {
             Ok(listener) => {
                 info!(addr = %self.addr, "Successfully bound Axum service listener");
@@ -216,10 +219,10 @@ impl pingora::services::Service for AxumService {
                 panic!("Failed to bind Axum port: {}", e);
             }
         };
-        
+
         let shutdown_fn = || async move {
             debug!("Setting up shutdown handlers");
-            
+
             let ctrl_c = async {
                 signal::ctrl_c()
                     .await
@@ -258,14 +261,14 @@ impl pingora::services::Service for AxumService {
         };
 
         info!("Starting Axum server with graceful shutdown");
-        
+
         if let Err(e) = axum::serve(listener, self.router.clone())
             .with_graceful_shutdown(shutdown_fn())
             .await
         {
             error!(error = ?e, "Axum server error");
         }
-        
+
         info!("Axum service stopped");
     }
 

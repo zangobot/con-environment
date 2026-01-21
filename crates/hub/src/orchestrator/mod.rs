@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -9,11 +8,11 @@ use kube::{
     api::{DeleteParams, ListParams, PostParams},
 };
 use papaya::{Guard, HashMap};
-use serde_json::json;
 use tracing::{info, warn};
 
 use crate::{HubError, config};
 
+mod definition;
 mod pod;
 // Re-export ManagedPod and Health structs
 pub use pod::{ManagedPod, SidecarHealth};
@@ -36,10 +35,44 @@ pub struct Orchestrator {
 pub enum PodStatus {
     Healthy(Pod, String),
     Old(ManagedPod),
-    Unhealthy(ManagedPod),
-    PodMissing,
-    Missing,
-    UnreachableError,
+}
+
+#[derive(Debug)]
+pub enum PodDiagnosis {
+    /// The happy path: IP is assigned and we built the URL.
+    Ready(String),
+    /// Pod has been deleted or hasn't reported status yet.
+    NoStatus,
+    /// Pod is waiting for the K8s scheduler to assign a Node.
+    PendingScheduling,
+    /// Scheduled, but pulling images or creating the container.
+    ContainerCreating,
+    /// Critical: Configuration error or private repo auth failure.
+    ImagePullError(String),
+    /// Critical: App is starting but immediately dying.
+    CrashLoop(String),
+    /// Pod finished (Success or Failure) and is no longer running.
+    Terminated(String),
+    /// Fallback for when we don't know why it's pending.
+    UnknownPending,
+}
+
+#[derive(Debug)]
+pub enum SidecarError {
+    /// The pod is still starting up (Pending, ContainerCreating).
+    NotReady,
+    /// The pod has vanished from Kubernetes.
+    Gone,
+    /// Critical K8s errors (CrashLoop, ImagePullBackOff).
+    K8sFailure(String),
+    /// Network level error (Connect timeout, DNS).
+    NetworkError(reqwest::Error),
+    /// The sidecar responded, but with a non-200 status code.
+    UnhealthyResponse(reqwest::StatusCode),
+    /// We couldn't parse the JSON response.
+    InvalidResponse(reqwest::Error),
+    /// Wrapper for internal HubErrors during refresh.
+    Internal(String),
 }
 
 impl Orchestrator {
@@ -73,18 +106,14 @@ impl Orchestrator {
 
     /// 1. POPULATE: Syncs in-memory state with Kubernetes.
     /// Lists all pods in the namespace and ensures they exist in the HashMap.
-    pub async fn populate(&self) -> Result<(), HubError> {
+    pub async fn populate(&self) -> Result<(), KubeError> {
         let list_params =
             ListParams::default().labels(&format!("{}={}", LABEL_MANAGED_BY, HUB_ID,));
 
         let k_pods =
             self.pod_api
                 .list(&list_params)
-                .await
-                .map_err(|source| HubError::KubeError {
-                    operation: "populate",
-                    source,
-                })?;
+                .await?;
 
         // Lockless iteration over K8s results
         for k_pod in k_pods.items {
@@ -118,11 +147,11 @@ impl Orchestrator {
         &self,
         session_key: &str,
         guard: &'guard impl Guard,
-    ) -> Result<PodStatus, KubeError> {
+    ) -> Result<PodStatus, SidecarError> {
         // 1. Look up managed pod
         let mp = match self.pods.get(session_key, guard) {
             Some(mp) => mp.clone(),
-            None => return Ok(PodStatus::Missing),
+            None => return Err(SidecarError::Gone),
         };
 
         // 2. Fast path: recently verified healthy
@@ -132,7 +161,7 @@ impl Orchestrator {
 
         // 3. Perform actual health check
         // Note: ensure_pod_loaded removal - Pod is guaranteed to be in ManagedPod
-        Ok(self.perform_health_check(session_key, &mp, guard).await)
+        self.perform_health_check(session_key, &mp, guard).await
     }
 
     /// Fast path: if we checked recently and pod has an IP, skip the health call
@@ -152,20 +181,17 @@ impl Orchestrator {
         Some(PodStatus::Healthy(pod.clone(), url))
     }
 
-    /// Actually call the sidecar health endpoint and update state
+/// Actually call the sidecar health endpoint and update state
     async fn perform_health_check<'guard>(
         &self,
         session_key: &str,
         mp: &ManagedPod,
         guard: &'guard impl Guard,
-    ) -> PodStatus {
-        // Direct access, no match needed
+    ) -> Result<PodStatus, SidecarError> {
         let pod = mp.pod();
 
-        let (health, pod_ip) = match self.query_sidecar_health(session_key, pod).await {
-            Some(result) => result,
-            None => return PodStatus::Unhealthy(mp.clone()),
-        };
+        // We now handle a Result instead of an Option
+        let (health, pod_ip) = self.query_sidecar_health(session_key, pod).await?;
 
         // Update cached health state
         let mut updated_mp = mp.clone();
@@ -175,32 +201,68 @@ impl Orchestrator {
 
         // Check if pod has exceeded idle timeout
         if updated_mp.idle() >= self.config.workshop_idle_seconds {
-            PodStatus::Old(updated_mp)
+            Ok(PodStatus::Old(updated_mp))
         } else {
             let url = self.build_proxy_url(&pod_ip);
-            PodStatus::Healthy(pod.clone(), url)
+            Ok(PodStatus::Healthy(pod.clone(), url))
         }
     }
 
-    /// Query the sidecar's health endpoint
+    /// Query the sidecar's health endpoint.
+    /// Handles recoverable errors by refreshing the pod from K8s.
+    /// Returns a Result containing specific failure reasons if unrecoverable.
     async fn query_sidecar_health(
         &self,
         session_key: &str,
-        pod: &Pod,
-    ) -> Option<(SidecarHealth, String)> {
-        let pod_ip = pod.status.as_ref()?.pod_ip.as_ref()?;
+        initial_pod: &Pod,
+    ) -> Result<(SidecarHealth, String), SidecarError> {
+        
+        // 1. Diagnose the pod provided (which might be stale from cache)
+        let mut diagnosis = self.diagnose_pod(initial_pod);
+
+        // 2. Handle Recoverable State: If the cached pod looks stuck or stale, refresh it.
+        if matches!(
+            diagnosis,
+            PodDiagnosis::NoStatus | PodDiagnosis::PendingScheduling | PodDiagnosis::ContainerCreating
+        ) {
+            // Attempt to fetch the latest version from K8s
+            match self.refresh_pod(session_key).await {
+                Ok(Some(fresh_pod)) => {
+                    // Re-diagnose with the fresh data
+                    diagnosis = self.diagnose_pod(&fresh_pod);
+                }
+                Ok(None) => return Err(SidecarError::Gone),
+                Err(e) => return Err(SidecarError::Internal(e.to_string())),
+            }
+        }
+
+        // 3. Resolve IP or Return Unrecoverable Error
+        let pod_ip = match diagnosis {
+            PodDiagnosis::Ready(ip) => ip,
+            // If it is still pending after a refresh, it's simply not ready yet.
+            PodDiagnosis::PendingScheduling 
+            | PodDiagnosis::ContainerCreating 
+            | PodDiagnosis::UnknownPending 
+            | PodDiagnosis::NoStatus => return Err(SidecarError::NotReady),
+            
+            // Unrecoverable Failures
+            PodDiagnosis::ImagePullError(s) => return Err(SidecarError::K8sFailure(s)),
+            PodDiagnosis::CrashLoop(s) => return Err(SidecarError::K8sFailure(s)),
+            PodDiagnosis::Terminated(s) => return Err(SidecarError::K8sFailure(format!("Terminated: {}", s))),
+        };
+
+        // 4. Perform Network Request
         let url = format!(
             "http://{}:{}/health",
             pod_ip, self.config.sidecar_health_port
         );
 
-        let resp = match self.http_client.get(&url).send().await {
-            Ok(r) => r,
-            Err(e) => {
-                warn!("Sidecar unreachable for {} ({}): {}", session_key, url, e);
-                return None;
-            }
-        };
+        let resp = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(SidecarError::NetworkError)?;
 
         if !resp.status().is_success() {
             warn!(
@@ -208,15 +270,112 @@ impl Orchestrator {
                 resp.status(),
                 session_key
             );
-            return None;
+            return Err(SidecarError::UnhealthyResponse(resp.status()));
         }
 
-        match resp.json::<SidecarHealth>().await {
-            Ok(health) => Some((health, pod_ip.clone())),
-            Err(e) => {
-                warn!("Failed to parse health JSON for {}: {}", session_key, e);
-                None
+        let health = resp
+            .json::<SidecarHealth>()
+            .await
+            .map_err(SidecarError::InvalidResponse)?;
+
+        Ok((health, pod_ip))
+    }
+
+    /// Refreshes the internal state of a specific user's pod by fetching it from K8s.
+    /// Returns the fresh Pod if found, or None if the pod has vanished.
+    pub async fn refresh_pod(&self, session_key: &str) -> Result<Option<Pod>, KubeError> {
+        // 1. Look up the pod name currently associated with this user
+        let pod_name = {
+            let guard = self.pods.guard();
+            // We only need the name to query K8s
+            match self.pods.get(session_key, &guard) {
+                Some(mp) => mp.pod().name_any(),
+                None => return Ok(None), // We aren't tracking a pod for this user
             }
+        };
+
+        // 2. Fetch the latest Pod object from Kubernetes
+        match self.pod_api.get(&pod_name).await {
+            Ok(k_pod) => {
+                self.pods.pin().update(session_key.to_string(), |mp| {
+                    let mut mp = mp.clone();
+                    mp.set_pod(k_pod.clone());
+                    mp
+                });
+                Ok(Some(k_pod))
+            }
+            Err(kube::Error::Api(ae)) if ae.code == 404 => {
+                self.pods.pin().remove(session_key);
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn diagnose_pod(&self, pod: &Pod) -> PodDiagnosis {
+        let status = match pod.status.as_ref() {
+            Some(s) => s,
+            None => return PodDiagnosis::NoStatus,
+        };
+
+        match status.phase.as_deref() {
+            Some("Succeeded") => return PodDiagnosis::Terminated("Completed".into()),
+            Some("Failed") => return PodDiagnosis::Terminated("Failed".into()),
+            _ => {} // Continue checking Pending states
+        }
+
+        // B. Scan Container Statuses for specific failure reasons
+        let all_statuses = status
+            .init_container_statuses
+            .iter()
+            .flatten()
+            .chain(status.container_statuses.iter().flatten());
+
+        for container_status in all_statuses {
+            if let Some(waiting) = &container_status
+                .state
+                .as_ref()
+                .and_then(|s| s.waiting.as_ref())
+            {
+                let reason = waiting.reason.as_deref().unwrap_or("Unknown");
+                let message = waiting.message.clone().unwrap_or_default();
+
+                match reason {
+                    "ContainerCreating" => return PodDiagnosis::ContainerCreating,
+                    "ErrImagePull" | "ImagePullBackOff" => {
+                        return PodDiagnosis::ImagePullError(format!("{}: {}", reason, message));
+                    }
+                    "CrashLoopBackOff" => {
+                        return PodDiagnosis::CrashLoop(format!("{}: {}", reason, message));
+                    }
+                    "InvalidImageName" => {
+                        return PodDiagnosis::ImagePullError("Invalid image name".into());
+                    }
+                    _ => {} // Keep looking or fall through
+                }
+            }
+
+            // Also check Terminated state for previous crashes
+            if let Some(terminated) = &container_status
+                .state
+                .as_ref()
+                .and_then(|s| s.terminated.as_ref())
+            {
+                if terminated.exit_code != 0 {
+                    return PodDiagnosis::CrashLoop(format!("Exit Code {}", terminated.exit_code));
+                }
+            }
+        }
+
+        
+        if status.host_ip.is_none() {
+            return PodDiagnosis::PendingScheduling;
+        }
+
+        if let Some(pod_ip) = &status.pod_ip {
+            PodDiagnosis::Ready(pod_ip.clone())
+        } else {
+            PodDiagnosis::UnknownPending
         }
     }
 
@@ -268,16 +427,10 @@ impl Orchestrator {
 
         let session_key = format!("{}-{}", user_id, workshop.name);
         let guard = self.guard();
-        match {
-            self.check_health(&session_key, &guard)
-                .await
-                .map_err(|source| HubError::KubeError {
-                    operation: "get_or_create_pod",
-                    source,
-                })?
-        } {
-            PodStatus::Healthy(_, url) => return Ok(url),
-            PodStatus::Old(mp) => {
+        match self.check_health(&session_key, &guard)
+                .await {
+            Ok(PodStatus::Healthy(_, url)) => return Ok(url),
+            Ok(PodStatus::Old(mp)) => {
                 // Old pod that wasn't cleaned up yet
                 let pod = mp.pod();
                 match pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
@@ -292,13 +445,25 @@ impl Orchestrator {
                     }
                 }
             }
-            PodStatus::Unhealthy(_) | PodStatus::UnreachableError => {
-                return Err(HubError::PodNotReady);
-            }
-            PodStatus::Missing | PodStatus::PodMissing => {
+            Err(SidecarError::Gone) => {
                 // We need to make the pod
                 self.pods.remove(user_id, &guard);
             }
+            Err(SidecarError::NotReady) => return Err(HubError::PodNotReady),
+            Err(SidecarError::K8sFailure(error)) => return Err(HubError::Error(error)),
+            Err(SidecarError::Internal(error)) => return Err(HubError::Error(error)),
+            Err(SidecarError::NetworkError(error)) => {
+                tracing::warn!(?error, "Network error, likely cilium booting");
+                return Err(HubError::PodNotReady)
+            },
+            Err(SidecarError::InvalidResponse(error)) => {
+                tracing::error!(?error, "Pod unhealthy, deleting and trying again");
+                self.pods.remove(user_id, &guard);
+            },
+            Err(SidecarError::UnhealthyResponse(status)) => {
+                tracing::error!(?status, "Pod unhealthy, deleting and trying again");
+                self.pods.remove(user_id, &guard);
+            },
         }
 
         // 2. SLOW PATH: Create New Pod
@@ -311,7 +476,7 @@ impl Orchestrator {
         let pod_name = format!("{}-{}-{}", workshop_name, user_id, generate_suffix());
         let expires_at = Utc::now().timestamp() + self.config.workshop_ttl_seconds;
 
-        let pod_spec = create_workshop_pod_spec(
+        let pod_spec = definition::create_workshop_pod_spec(
             &pod_name,
             user_id,
             workshop_name,
@@ -323,9 +488,9 @@ impl Orchestrator {
             .pod_api
             .create(&PostParams::default(), &pod_spec)
             .await
-            .map_err(|source| HubError::KubeError {
-                operation: "get_or_create_pod",
-                source,
+            .map_err(|source| {
+                tracing::error!(?source, "Kubernetes error while creating pod");
+                HubError::Error(format!("Kubernetes error while creating pod {}", source))
             })?;
         info!("Created pod {}", pod_name);
 
@@ -337,7 +502,7 @@ impl Orchestrator {
             ..Default::default()
         };
 
-        let svc_spec = create_workshop_service_spec(
+        let svc_spec = definition::create_workshop_service_spec(
             &pod_name,
             &pod_name,
             user_id,
@@ -348,26 +513,39 @@ impl Orchestrator {
         self.svc_api
             .create(&PostParams::default(), &svc_spec)
             .await
-            .map_err(|source| HubError::KubeError {
-                operation: "get_or_create_pod",
-                source,
+            .map_err(|source| {
+                tracing::error!(?source, "Kubernetes error while creating service");
+                HubError::Error(format!("Kubernetes error while creating service {}", source))
             })?;
 
         self.pods.insert(session_key, ManagedPod::new(pod), &guard);
         Err(HubError::PodNotReady)
     }
 
+
     /// 4. GARBAGE COLLECTION: Removes expired or idle pods.
+    /// Implements a "Low Watermark" strategy:
+    /// - Always deletes Expired (TTL) pods.
+    /// - Deletes Idle pods only if capacity is > 50%.
+    /// - Prioritizes deleting the *most* idle pods first.
     pub async fn gc(&self) -> Result<usize, HubError> {
-        let mut candidates = Vec::new();
         let now = Utc::now().timestamp();
         let guard = self.pods.owned_guard();
+        
+        // 1. Snapshot the total count once to avoid race conditions during the loop
+        let initial_count = self.pods.len();
+        let limit = self.config.workshop_pod_limit;
+        // The target count we want to reach (e.g., 50% of limit)
+        let low_watermark = limit / 2;
 
-        // 1. SCAN: Identify candidates (Fast, Lock-free read)
-        for (user_id, mp) in self.pods.iter(&guard) {
-            let is_idle = mp.idle() > self.config.workshop_idle_seconds;
+        // 2. SCAN: Identify candidates
+        // Store (key, is_expired, idle_seconds) so we can sort
+        let mut candidates = Vec::new();
+        
+        for (session_key, mp) in self.pods.iter(&guard) {
+            let idle_seconds = mp.idle();
+            let is_idle = idle_seconds > self.config.workshop_idle_seconds;
 
-            // Direct access to pod(), no unwrapping needed
             let is_expired = mp
                 .pod()
                 .metadata
@@ -379,52 +557,67 @@ impl Orchestrator {
                 .unwrap_or(false);
 
             if is_idle || is_expired {
-                candidates.push((user_id.clone(), is_expired));
+                candidates.push((session_key.clone(), is_expired, idle_seconds));
             }
         }
 
-        // 2. VERIFY & PURGE: Health check before deletion
-        let mut deleted_count = 0;
+        candidates.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| b.2.cmp(&a.2))
+        });
 
-        for (session_key, is_expired) in candidates {
-            // Expired pods get deleted regardless of health
-            if !is_expired {
-                // For idle pods, do a fresh health check - an active connection
-                // may have kept the pod alive without updating our cached state
-                match self.check_health(&session_key, &guard).await {
-                    Ok(PodStatus::Healthy(_, _)) => {
-                        info!(
-                            "GC: Skipping {} - health check shows active connection",
-                            session_key
-                        );
-                        continue;
-                    }
-                    Ok(PodStatus::Old(_)) => {
-                        // Still old after fresh check, proceed with deletion
-                    }
-                    Ok(PodStatus::Unhealthy(_)) => {
-                        // Unhealthy pods should be cleaned up
-                    }
-                    Ok(PodStatus::Missing | PodStatus::PodMissing) => {
-                        // Already gone, just clean up map entry
-                    }
-                    Ok(PodStatus::UnreachableError) | Err(_) => {
-                        // Can't reach pod - skip for now, try again next cycle
-                        warn!(
-                            "GC: Skipping {} - couldn't verify health, will retry",
-                            session_key
-                        );
-                        continue;
+        let mut deleted_count = 0;
+        let mut planned_deletions = 0;
+
+        for (session_key, is_expired, _) in candidates {
+            let current_projected_count = initial_count.saturating_sub(planned_deletions);
+
+            let should_delete = if is_expired {
+                true
+            } else {
+                // If it's just Idle (not expired), check capacity.
+                // If we are below the watermark, we can perform "Mercy" and skip this check.
+                if current_projected_count <= low_watermark {
+                    info!("GC: Mercy - Keeping idle pod {} (Capacity {} <= {})", 
+                        session_key, current_projected_count, low_watermark);
+                    false
+                } else {
+                    // We are above capacity, perform health check to verify idleness
+                    match self.check_health(&session_key, &guard).await {
+                        Ok(PodStatus::Healthy(_, _)) => {
+                            info!("GC: Skipping {} - health check shows active connection", session_key);
+                            false
+                        }
+                        Ok(PodStatus::Old(_)) => {
+                            true
+                        },
+                        Err(SidecarError::Gone) => true,
+                        Err(SidecarError::K8sFailure(e)) => {
+                            warn!("GC: Deleting broken pod {}: {}", session_key, e);
+                            true
+                        }
+                        Err(SidecarError::UnhealthyResponse(code)) => {
+                            warn!("GC: Deleting unhealthy pod {} (Status: {})", session_key, code);
+                            true
+                        }
+                        Err(e) => {
+                            warn!("GC: Skipping {} - couldn't verify health ({:?}), will retry", session_key, e);
+                            false
+                        }
                     }
                 }
-            }
+            };
 
-            info!("GC: Deleting {} (expired: {})", session_key, is_expired);
+            if should_delete {
+                planned_deletions += 1;
+                
+                info!("GC: Deleting {} (expired: {})", session_key, is_expired);
 
-            if let Err(e) = self.delete(&session_key).await {
-                tracing::error!("GC: Failed to delete session for {}: {}", session_key, e);
-            } else {
-                deleted_count += 1;
+                if let Err(e) = self.delete(&session_key).await {
+                    tracing::error!("GC: Failed to delete session for {}: {}", session_key, e);
+                } else {
+                    deleted_count += 1;
+                }
             }
         }
 
@@ -446,107 +639,4 @@ fn generate_suffix() -> String {
         .map(char::from)
         .collect::<String>()
         .to_lowercase()
-}
-
-fn create_workshop_pod_spec(
-    pod_name: &str,
-    user_id: &str,
-    workshop_name: &str,
-    image: &str,
-    config: &config::Config,
-    expires_at_timestamp: i64,
-) -> Pod {
-    let mut labels = BTreeMap::new();
-    labels.insert(LABEL_USER_ID.to_string(), user_id.to_string());
-    labels.insert(LABEL_WORKSHOP_NAME.to_string(), workshop_name.to_string());
-    labels.insert(LABEL_MANAGED_BY.to_string(), HUB_ID.to_string());
-    labels.insert("app".to_string(), pod_name.to_string());
-
-    let mut annotations = BTreeMap::new();
-    annotations.insert(TTL_ANNOTATION.to_string(), expires_at_timestamp.to_string());
-
-    serde_json::from_value(json!({
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "metadata": {
-            "name": pod_name,
-            "labels": labels,
-            "annotations": annotations
-        },
-        "spec": {
-            "restartPolicy": "Never",
-            "containers": [
-                {
-                    "name": "workshop",
-                    "image": image,
-                    "imagePullPolicy": "Always",
-                    "ports": [{"containerPort": config.workshop_port}],
-                    "resources": {
-                        "requests": {
-                            "cpu": config.workshop_cpu_request,
-                            "memory": config.workshop_mem_request
-                        },
-                        "limits": {
-                            "cpu": config.workshop_cpu_limit,
-                            "memory": config.workshop_mem_limit
-                        }
-                    }
-                },
-                {
-                    "name": "sidecar",
-                    "image": crate::SIDECAR, // Ensure this constant is available or pass from config
-                    "imagePullPolicy": "Always",
-                    "env": [
-                        {"name": "SIDECAR_HTTP_LISTEN", "value": format!("0.0.0.0:{}", config.sidecar_health_port)},
-                        {"name": "SIDECAR_TCP_LISTEN", "value": format!("0.0.0.0:{}", config.sidecar_proxy_port)},
-                        {"name": "SIDECAR_TARGET_TCP", "value": format!("127.0.0.1:{}", config.workshop_port)},
-                    ],
-                    "ports": [
-                        {"name": "health", "containerPort": config.sidecar_health_port},
-                        {"name": "proxy", "containerPort": config.sidecar_proxy_port}
-                    ],
-                    "readinessProbe": {
-                        "httpGet": { "path": "/health", "port": config.sidecar_health_port, "scheme": "HTTP" },
-                        "initialDelaySeconds": 5,
-                        "periodSeconds": 5
-                    }
-                }
-            ]
-        }
-    })).unwrap()
-}
-
-fn create_workshop_service_spec(
-    service_name: &str,
-    pod_name: &str,
-    user_id: &str,
-    workshop_name: &str,
-    owner_ref: OwnerReference,
-    config: &config::Config,
-) -> Service {
-    let mut labels = BTreeMap::new();
-    labels.insert(LABEL_USER_ID.to_string(), user_id.to_string());
-    labels.insert(LABEL_WORKSHOP_NAME.to_string(), workshop_name.to_string());
-    labels.insert(LABEL_MANAGED_BY.to_string(), HUB_ID.to_string());
-
-    let mut selector = BTreeMap::new();
-    selector.insert("app".to_string(), pod_name.to_string());
-
-    serde_json::from_value(json!({
-        "apiVersion": "v1",
-        "kind": "Service",
-        "metadata": {
-            "name": service_name,
-            "labels": labels,
-            "ownerReferences": [owner_ref]
-        },
-        "spec": {
-            "type": "ClusterIP",
-            "selector": selector,
-            "ports": [
-                { "name": "proxy", "port": config.sidecar_proxy_port, "targetPort": config.sidecar_proxy_port },
-                { "name": "health", "port": config.sidecar_health_port, "targetPort": config.sidecar_health_port }
-            ]
-        }
-    })).unwrap()
 }
