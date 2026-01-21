@@ -1,5 +1,4 @@
 use pingora::prelude::*;
-use std::sync::Arc;
 use tokio::sync::OnceCell;
 
 // Project modules
@@ -24,7 +23,7 @@ pub static SIDECAR: &'static str = "ghcr.io/nbhdai/workshop-sidecar:latest";
 
 fn main() {
     tracing_subscriber::fmt::init();
-    let config = Arc::new(config::Config::from_env());
+    let config = config::Config::from_env();
 
     tracing::info!("Config loaded: {:?}", config);
 

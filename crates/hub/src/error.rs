@@ -11,6 +11,6 @@ pub enum HubError {
     #[error("Global pod limit reached")]
     PodLimitReached,
 
-    #[error("Global pod limit reached")]
+    #[error("Workshop not found")]
     WorkshopNotFound,
 }

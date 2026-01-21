@@ -22,11 +22,7 @@ use tracing::{error, info};
 /// Shared state between the HTTP server and the TCP proxy.
 #[derive(Debug)]
 pub struct AppState {
-    /// The last time any activity was detected on a proxied stream.
-    /// Stored as a Unix timestamp (seconds).
     last_activity: AtomicI64,
-    // We don't really need this mutex, AtomicI64 is sufficient.
-    // Keeping it simple.
 }
 
 impl AppState {
@@ -96,7 +92,7 @@ async fn main() {
     tokio::spawn(async move {
         info!("Starting HTTP health server...");
         if let Err(e) = http_server::run_http_server(http_state, http_config).await {
-            error!("HTTP health server failed: {}", e);
+            panic!("HTTP health server failed: {}", e);
         }
     });
 

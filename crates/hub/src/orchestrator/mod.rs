@@ -117,27 +117,25 @@ impl Orchestrator {
 
         // Lockless iteration over K8s results
         for k_pod in k_pods.items {
-            if let Some(user_id) = k_pod
-                .metadata
-                .labels
-                .as_ref()
-                .and_then(|l| l.get(LABEL_USER_ID))
-            {
-                let user_id = user_id.clone();
+            // We need to extract both labels to reconstruct the session key
+            if let Some(labels) = &k_pod.metadata.labels {
+                if let (Some(user_id), Some(workshop_name)) = (
+                    labels.get(LABEL_USER_ID),
+                    labels.get(LABEL_WORKSHOP_NAME),
+                ) {
+                    let session_key = format!("{}-{}", user_id, workshop_name);
 
-                // Update existing or insert new (Adoption)
-                self.pods.pin().update_or_insert_with(
-                    user_id.clone(),
-                    |mp| {
-                        let mut mp = mp.clone();
-                        mp.set_pod(k_pod.clone());
-                        mp
-                    },
-                    || {
-                        // Assuming ManagedPod::new(Pod) exists now that Option is removed
-                        ManagedPod::new(k_pod.clone())
-                    },
-                );
+                    // Update existing or insert new (Adoption)
+                    self.pods.pin().update_or_insert_with(
+                        session_key.clone(),
+                        |mp| {
+                            let mut mp = mp.clone();
+                            mp.set_pod(k_pod.clone());
+                            mp
+                        },
+                        || ManagedPod::new(k_pod.clone()),
+                    );
+                }
             }
         }
         Ok(())
@@ -385,11 +383,11 @@ impl Orchestrator {
     }
 
     /// 3. DELETE: Removes K8s resources and clears the map entry.
-    pub async fn delete(&self, user_id: &str) -> Result<(), HubError> {
+    pub async fn delete(&self, session_key: &str) -> Result<(), HubError> {
         // Get pod name from map first
         let pod_name = {
             let guard = self.pods.pin();
-            match guard.get(user_id) {
+            match guard.get(session_key) {
                 // Direct access to pod()
                 Some(mp) => Some(mp.pod().name_any()),
                 None => return Ok(()), // Already gone
@@ -397,7 +395,7 @@ impl Orchestrator {
         };
 
         if let Some(name) = pod_name {
-            info!("Orchestrator: Deleting resources for user {}", user_id);
+            info!("Orchestrator: Deleting resources for user {}", session_key);
             let dp = DeleteParams::default();
 
             // Delete Service (ignore 404s)
@@ -408,7 +406,7 @@ impl Orchestrator {
         }
 
         // Remove from memory
-        self.pods.pin().remove(user_id);
+        self.pods.pin().remove(session_key);
 
         Ok(())
     }
@@ -435,19 +433,19 @@ impl Orchestrator {
                 let pod = mp.pod();
                 match pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
                     Some(pod_ip) => {
-                        let url = format!("http://{}:{}", pod_ip, self.config.sidecar_proxy_port);
+                        let url = format!("{}:{}", pod_ip, self.config.sidecar_proxy_port);
                         return Ok(url);
                     }
                     None => {
                         // Pod exists but hasn't been assigned an IP yet.
                         // It is likely in a Pending state.
-                        self.pods.remove(user_id, &guard);
+                        self.pods.remove(&session_key, &guard);
                     }
                 }
             }
             Err(SidecarError::Gone) => {
                 // We need to make the pod
-                self.pods.remove(user_id, &guard);
+                self.pods.remove(&session_key, &guard);
             }
             Err(SidecarError::NotReady) => return Err(HubError::PodNotReady),
             Err(SidecarError::K8sFailure(error)) => return Err(HubError::Error(error)),
@@ -458,11 +456,11 @@ impl Orchestrator {
             },
             Err(SidecarError::InvalidResponse(error)) => {
                 tracing::error!(?error, "Pod unhealthy, deleting and trying again");
-                self.pods.remove(user_id, &guard);
+                self.pods.remove(&session_key, &guard);
             },
             Err(SidecarError::UnhealthyResponse(status)) => {
                 tracing::error!(?status, "Pod unhealthy, deleting and trying again");
-                self.pods.remove(user_id, &guard);
+                self.pods.remove(&session_key, &guard);
             },
         }
 

@@ -4,7 +4,7 @@ use axum::{
     Router,
     extract::{Path, Query},
     response::{Html, IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
 };
 use pingora::server::Fds;
 use reqwest::StatusCode;
@@ -24,6 +24,10 @@ use crate::{auth, config::Workshop, orchestrator};
 struct IndexTemplate {
     workshops: Vec<Workshop>,
 }
+
+#[derive(Template)]
+#[template(path = "login.html")]
+struct LoginTemplate;
 
 #[derive(Template)]
 #[template(path = "pending.html")]
@@ -64,7 +68,7 @@ impl AxumService {
 
         let router = Router::new()
             .route("/index", get(index_handler))
-            .route("/workshop-login", post(auth::handle_login))
+            .route("/workshop-login", get(login_handler).post(auth::handle_login))
             .route("/workshop-pending/{name}", get(pending_handler))
             .route("/workshop-at-capacity/{name}", get(capacity_handler))
             .route("/workshop-error", get(error_handler))
@@ -111,6 +115,25 @@ async fn index_handler() -> Result<Response, StatusCode> {
         }
         Err(e) => {
             error!(error = ?e, "Failed to render index template");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Add the handler function
+/// Login page handler
+#[tracing::instrument(level = "debug")]
+async fn login_handler() -> Result<Response, StatusCode> {
+    info!("Serving login page");
+    let template = LoginTemplate;
+
+    match template.render() {
+        Ok(html) => {
+            debug!("Successfully rendered login template");
+            Ok(Html(html).into_response())
+        }
+        Err(e) => {
+            error!(error = ?e, "Failed to render login template");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

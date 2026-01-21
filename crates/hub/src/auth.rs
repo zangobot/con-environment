@@ -63,6 +63,16 @@ pub async fn handle_login(
 
     let user_id = format!("user-{}", sanitize_username(&login_req.username));
 
+    // Check if the sanitized username is at least 4 characters
+    if user_id.len() < 4 {
+        tracing::warn!("Login failed: Username '{}' is too short after sanitization", login_req.username);
+        return Json(LoginResponse {
+            success: false,
+            message: "Username must be at least 4 characters (alphanumeric only).".to_string(),
+            redirect: None,
+        });
+    }
+
     let iat = Utc::now();
     let expiration = Utc::now() + Duration::hours(24);
     let claims = Claims {
@@ -135,7 +145,10 @@ pub fn validate_cookie(cookie_header: &str) -> Option<UserIdentity> {
                     user_id: token_data.claims.sub,
                     username: token_data.claims.username,
                 }),
-                Err(_) => None,
+                Err(e) => {
+                    tracing::debug!("JWT validation failed: {:?}", e);
+                    None
+                }
             }
         })
 }
