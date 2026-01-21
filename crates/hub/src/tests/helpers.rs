@@ -7,8 +7,8 @@ use super::config::{get_gc_test_config, get_test_config, validate_talos_environm
 use crate::{config::Config, orchestrator::Orchestrator};
 use k8s_openapi::api::core::v1::{Namespace, Pod, Service};
 use kube::{
-    api::{DeleteParams, ListParams, PostParams},
     Api, Client,
+    api::{DeleteParams, ListParams, PostParams},
 };
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -190,7 +190,8 @@ impl TestContext {
     pub async fn create_test_pod(&self, user_id: &str) -> Result<Pod, kube::Error> {
         info!("Creating test pod");
 
-        let pod_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.config().workshop_namespace);
+        let pod_api: Api<Pod> =
+            Api::namespaced(self.client.clone(), &self.config().workshop_namespace);
 
         let pod_name = format!("{}-{}", self.config().workshops[0].name, user_id);
 

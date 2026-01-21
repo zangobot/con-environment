@@ -77,11 +77,10 @@ impl Config {
 
 fn default_workshop() -> Vec<Workshop> {
     vec![Workshop {
-            name: "workshop".to_string(),
-            image: "traefik/whoami".to_string(),
-            description: "The host didn't finish setting this up".to_string(),
+        name: "workshop".to_string(),
+        image: "traefik/whoami".to_string(),
+        description: "The host didn't finish setting this up".to_string(),
     }]
-    
 }
 fn default_workshop_namespace() -> String {
     "default".to_string()
@@ -92,7 +91,6 @@ fn default_workshop_ttl() -> i64 {
 fn default_workshop_idle() -> i64 {
     60 * 60
 } // 1 hour
-
 
 fn default_workshop_port() -> u16 {
     80
@@ -156,8 +154,9 @@ impl Config {
             }
         }
 
-        panic!("Unable to find workshop config file. Checked WORKSHOP_CONFIG env var and default paths: workshop.yaml, /app/config/workshop.yaml, /etc/workshop/config.yaml");
-
+        panic!(
+            "Unable to find workshop config file. Checked WORKSHOP_CONFIG env var and default paths: workshop.yaml, /app/config/workshop.yaml, /etc/workshop/config.yaml"
+        );
     }
 
     pub fn from_yaml_file(path: impl AsRef<Path>) -> Self {

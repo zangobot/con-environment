@@ -2,17 +2,17 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use chrono::Utc;
-use kube::{
-    api::{DeleteParams, ListParams, PostParams},
-    Api, ResourceExt, Error as KubeError, Client as KubeClient
-};
 use k8s_openapi::api::core::v1::{Pod, Service};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
+use kube::{
+    Api, Client as KubeClient, Error as KubeError, ResourceExt,
+    api::{DeleteParams, ListParams, PostParams},
+};
 use papaya::{Guard, HashMap};
 use serde_json::json;
 use tracing::{info, warn};
 
-use crate::{config, HubError};
+use crate::{HubError, config};
 
 mod pod;
 // Re-export ManagedPod and Health structs
@@ -56,13 +56,14 @@ impl Orchestrator {
             .expect("Failed to create HTTP client");
         let kube_client = KubeClient::try_default().await.expect("Kube client failed");
         let pod_api: Api<Pod> = Api::namespaced(kube_client.clone(), &config.workshop_namespace);
-        let svc_api: Api<Service> = Api::namespaced(kube_client.clone(), &config.workshop_namespace);
+        let svc_api: Api<Service> =
+            Api::namespaced(kube_client.clone(), &config.workshop_namespace);
         Self {
             config,
             pods,
             http_client,
             pod_api,
-            svc_api
+            svc_api,
         }
     }
 
@@ -73,20 +74,28 @@ impl Orchestrator {
     /// 1. POPULATE: Syncs in-memory state with Kubernetes.
     /// Lists all pods in the namespace and ensures they exist in the HashMap.
     pub async fn populate(&self) -> Result<(), HubError> {
-        let list_params = ListParams::default().labels(&format!(
-            "{}={}",
-            LABEL_MANAGED_BY, HUB_ID,
-        ));
+        let list_params =
+            ListParams::default().labels(&format!("{}={}", LABEL_MANAGED_BY, HUB_ID,));
 
-        let k_pods = self.pod_api.list(&list_params).await.map_err(|source| {
-            HubError::KubeError { operation: "populate", source }
-        })?;
-        
+        let k_pods =
+            self.pod_api
+                .list(&list_params)
+                .await
+                .map_err(|source| HubError::KubeError {
+                    operation: "populate",
+                    source,
+                })?;
+
         // Lockless iteration over K8s results
         for k_pod in k_pods.items {
-            if let Some(user_id) = k_pod.metadata.labels.as_ref().and_then(|l| l.get(LABEL_USER_ID)) {
+            if let Some(user_id) = k_pod
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get(LABEL_USER_ID))
+            {
                 let user_id = user_id.clone();
-                
+
                 // Update existing or insert new (Adoption)
                 self.pods.pin().update_or_insert_with(
                     user_id.clone(),
@@ -133,7 +142,7 @@ impl Orchestrator {
 
         // No need to unwrap Option<Pod>, it is guaranteed to exist
         let pod = mp.pod();
-        
+
         if mp.idle() >= freshness_threshold {
             return None; // Cache is stale, need fresh check
         }
@@ -161,7 +170,8 @@ impl Orchestrator {
         // Update cached health state
         let mut updated_mp = mp.clone();
         updated_mp.set_health(health);
-        self.pods.insert(session_key.to_string(), updated_mp.clone(), guard);
+        self.pods
+            .insert(session_key.to_string(), updated_mp.clone(), guard);
 
         // Check if pod has exceeded idle timeout
         if updated_mp.idle() >= self.config.workshop_idle_seconds {
@@ -193,7 +203,11 @@ impl Orchestrator {
         };
 
         if !resp.status().is_success() {
-            warn!("Health check returned {} for {}", resp.status(), session_key);
+            warn!(
+                "Health check returned {} for {}",
+                resp.status(),
+                session_key
+            );
             return None;
         }
 
@@ -226,25 +240,28 @@ impl Orchestrator {
         if let Some(name) = pod_name {
             info!("Orchestrator: Deleting resources for user {}", user_id);
             let dp = DeleteParams::default();
-            
+
             // Delete Service (ignore 404s)
             let _ = self.svc_api.delete(&name, &dp).await;
-            
+
             // Delete Pod
             let _ = self.pod_api.delete(&name, &dp).await;
         }
 
         // Remove from memory
         self.pods.pin().remove(user_id);
-        
+
         Ok(())
     }
 
     /// Retrieves an existing pod, recovers state from K8s if missing, or creates a new one.
-    pub async fn get_or_create_pod(&self, user_id: &str, workshop_name: &str) -> Result<String, HubError> {
+    pub async fn get_or_create_pod(
+        &self,
+        user_id: &str,
+        workshop_name: &str,
+    ) -> Result<String, HubError> {
         // 1. FAST PATH: Check In-Memory Map
-        let workshop = self.config.get_workshop(workshop_name)
-        .ok_or_else(|| {
+        let workshop = self.config.get_workshop(workshop_name).ok_or_else(|| {
             tracing::error!("Unknown workshop requested: {}", workshop_name);
             HubError::WorkshopNotFound
         })?;
@@ -252,22 +269,22 @@ impl Orchestrator {
         let session_key = format!("{}-{}", user_id, workshop.name);
         let guard = self.guard();
         match {
-            self.check_health(&session_key, &guard).await.map_err(|source| {
-                HubError::KubeError { operation: "get_or_create_pod", source }
-            })?
+            self.check_health(&session_key, &guard)
+                .await
+                .map_err(|source| HubError::KubeError {
+                    operation: "get_or_create_pod",
+                    source,
+                })?
         } {
-            PodStatus::Healthy(_ , url) => return Ok(url),
+            PodStatus::Healthy(_, url) => return Ok(url),
             PodStatus::Old(mp) => {
                 // Old pod that wasn't cleaned up yet
                 let pod = mp.pod();
                 match pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
                     Some(pod_ip) => {
-                        let url = format!(
-                            "http://{}:{}",
-                            pod_ip, self.config.sidecar_proxy_port
-                        );
+                        let url = format!("http://{}:{}", pod_ip, self.config.sidecar_proxy_port);
                         return Ok(url);
-                    },
+                    }
                     None => {
                         // Pod exists but hasn't been assigned an IP yet.
                         // It is likely in a Pending state.
@@ -275,11 +292,13 @@ impl Orchestrator {
                     }
                 }
             }
-            PodStatus::Unhealthy(_) | PodStatus::UnreachableError => return Err(HubError::PodNotReady),
+            PodStatus::Unhealthy(_) | PodStatus::UnreachableError => {
+                return Err(HubError::PodNotReady);
+            }
             PodStatus::Missing | PodStatus::PodMissing => {
                 // We need to make the pod
                 self.pods.remove(user_id, &guard);
-            },
+            }
         }
 
         // 2. SLOW PATH: Create New Pod
@@ -292,9 +311,21 @@ impl Orchestrator {
         let pod_name = format!("{}-{}-{}", workshop_name, user_id, generate_suffix());
         let expires_at = Utc::now().timestamp() + self.config.workshop_ttl_seconds;
 
-        let pod_spec = create_workshop_pod_spec(&pod_name, user_id, workshop_name, &workshop.image, &self.config, expires_at);
-        let pod = self.pod_api.create(&PostParams::default(), &pod_spec).await.map_err(|source| {
-                HubError::KubeError { operation: "get_or_create_pod", source }
+        let pod_spec = create_workshop_pod_spec(
+            &pod_name,
+            user_id,
+            workshop_name,
+            &workshop.image,
+            &self.config,
+            expires_at,
+        );
+        let pod = self
+            .pod_api
+            .create(&PostParams::default(), &pod_spec)
+            .await
+            .map_err(|source| HubError::KubeError {
+                operation: "get_or_create_pod",
+                source,
             })?;
         info!("Created pod {}", pod_name);
 
@@ -306,9 +337,20 @@ impl Orchestrator {
             ..Default::default()
         };
 
-        let svc_spec = create_workshop_service_spec(&pod_name, &pod_name, user_id, workshop_name, owner_ref, &self.config);
-        self.svc_api.create(&PostParams::default(), &svc_spec).await.map_err(|source| {
-                HubError::KubeError { operation: "get_or_create_pod", source }
+        let svc_spec = create_workshop_service_spec(
+            &pod_name,
+            &pod_name,
+            user_id,
+            workshop_name,
+            owner_ref,
+            &self.config,
+        );
+        self.svc_api
+            .create(&PostParams::default(), &svc_spec)
+            .await
+            .map_err(|source| HubError::KubeError {
+                operation: "get_or_create_pod",
+                source,
             })?;
 
         self.pods.insert(session_key, ManagedPod::new(pod), &guard);
@@ -326,8 +368,11 @@ impl Orchestrator {
             let is_idle = mp.idle() > self.config.workshop_idle_seconds;
 
             // Direct access to pod(), no unwrapping needed
-            let is_expired = mp.pod()
-                .metadata.annotations.as_ref()
+            let is_expired = mp
+                .pod()
+                .metadata
+                .annotations
+                .as_ref()
                 .and_then(|ann| ann.get(TTL_ANNOTATION))
                 .and_then(|t| t.parse::<i64>().ok())
                 .map(|expires_at| now > expires_at)
@@ -374,10 +419,7 @@ impl Orchestrator {
                 }
             }
 
-            info!(
-                "GC: Deleting {} (expired: {})",
-                session_key, is_expired
-            );
+            info!("GC: Deleting {} (expired: {})", session_key, is_expired);
 
             if let Err(e) = self.delete(&session_key).await {
                 tracing::error!("GC: Failed to delete session for {}: {}", session_key, e);
@@ -394,7 +436,6 @@ impl Orchestrator {
     }
 }
 
-
 // --- Helpers ---
 
 fn generate_suffix() -> String {
@@ -410,7 +451,7 @@ fn generate_suffix() -> String {
 fn create_workshop_pod_spec(
     pod_name: &str,
     user_id: &str,
-    workshop_name: &str, 
+    workshop_name: &str,
     image: &str,
     config: &config::Config,
     expires_at_timestamp: i64,

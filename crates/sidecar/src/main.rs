@@ -1,7 +1,11 @@
-use std::{sync::{
-    Arc, atomic::{AtomicI64, Ordering}
-}, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::{
+        atomic::{AtomicI64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::signal;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -125,7 +129,7 @@ async fn main() {
             info!("Received shutdown signal");
         }
     }
-    
+
     // Give active connections time to drain
     tokio::time::sleep(Duration::from_secs(5)).await;
 }

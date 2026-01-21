@@ -5,7 +5,7 @@
 
 use super::helpers::TestContext;
 use k8s_openapi::api::core::v1::Pod;
-use kube::{api::PostParams, Api};
+use kube::{Api, api::PostParams};
 use std::collections::BTreeMap;
 use tracing::{debug, info};
 
@@ -43,7 +43,10 @@ async fn test_gc_cleans_up_idle_pods() {
 
     // Populate orchestrator state
     info!("Populating orchestrator state from K8s");
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // Wait a bit to ensure pod is tracked
     info!("Waiting 6s before running GC");
@@ -59,7 +62,7 @@ async fn test_gc_cleans_up_idle_pods() {
     // Run GC - the GC test config has short idle timeout
     info!("Running garbage collection");
     let result = ctx.orchestrator.gc().await;
-    
+
     match &result {
         Ok(count) => info!(cleaned_up = count, "GC completed"),
         Err(e) => panic!("GC failed: {}", e),
@@ -73,7 +76,7 @@ async fn test_gc_cleans_up_idle_pods() {
     // Note: Pod might still exist if sidecar reported healthy
     let pod_exists = ctx.pod_exists(pod_name).await;
     let service_exists = ctx.service_exists(&service_name).await;
-    
+
     debug!(
         pod_exists = pod_exists,
         service_exists = service_exists,
@@ -148,7 +151,10 @@ async fn test_gc_respects_ttl() {
     tokio::time::sleep(std::time::Duration::from_secs(20)).await;
 
     // Populate orchestrator state
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // Run GC - TTL should trigger deletion even if idle threshold is high
     info!("Running GC (TTL should trigger deletion)");
@@ -165,10 +171,7 @@ async fn test_gc_respects_ttl() {
     let pod_exists = ctx.pod_exists("ttl-test-pod").await;
     debug!(pod_exists = pod_exists, "Pod existence after GC");
 
-    assert!(
-        !pod_exists,
-        "Pod should be deleted due to expired TTL"
-    );
+    assert!(!pod_exists, "Pod should be deleted due to expired TTL");
 
     info!("✅ Test passed: GC respects TTL");
 }
@@ -227,7 +230,10 @@ async fn test_gc_only_affects_managed_pods() {
     tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
 
     // Populate orchestrator state
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // Run GC
     info!("Running GC");
@@ -240,11 +246,17 @@ async fn test_gc_only_affects_managed_pods() {
 
     // Managed pod should be deleted (no sidecar = unhealthy)
     let managed_exists = ctx.pod_exists(managed_name).await;
-    debug!(managed_exists = managed_exists, "Managed pod existence after GC");
+    debug!(
+        managed_exists = managed_exists,
+        "Managed pod existence after GC"
+    );
 
     // Unmanaged pod should still exist
     let unmanaged_exists = ctx.pod_exists("unmanaged-test-pod").await;
-    debug!(unmanaged_exists = unmanaged_exists, "Unmanaged pod existence after GC");
+    debug!(
+        unmanaged_exists = unmanaged_exists,
+        "Unmanaged pod existence after GC"
+    );
 
     assert!(
         unmanaged_exists,
@@ -311,7 +323,10 @@ async fn test_gc_handles_missing_health_endpoint() {
     ctx.wait_for_pod_running("no-health-pod").await.ok();
 
     // Populate orchestrator state
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // Run GC - should handle missing health endpoint gracefully
     info!("Running GC (should handle missing health endpoint gracefully)");
@@ -393,7 +408,10 @@ async fn test_gc_cleans_failed_pods() {
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
     // Populate orchestrator state
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // Run GC
     info!("Running GC");
@@ -432,7 +450,7 @@ async fn test_gc_empty_namespace() {
     let result = ctx.orchestrator.gc().await;
 
     assert!(result.is_ok(), "GC should succeed on empty namespace");
-    
+
     let cleaned_up = result.unwrap();
     debug!(cleaned_up = cleaned_up, "GC result");
     assert_eq!(cleaned_up, 0, "Should have nothing to clean up");
@@ -466,17 +484,24 @@ async fn test_gc_returns_correct_count() {
     // Verify pods exist
     let initial_count = ctx.count_managed_pods().await;
     debug!(initial_count = initial_count, "Initial managed pod count");
-    assert!(initial_count >= num_pods, "Should have at least {} pods", num_pods);
+    assert!(
+        initial_count >= num_pods,
+        "Should have at least {} pods",
+        num_pods
+    );
 
     // Populate orchestrator state
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // Run GC
     info!("Running GC");
     let result = ctx.orchestrator.gc().await;
 
     assert!(result.is_ok(), "GC should succeed");
-    
+
     let cleaned_up = result.unwrap();
     debug!(cleaned_up = cleaned_up, "GC cleaned up count");
 

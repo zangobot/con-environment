@@ -20,9 +20,9 @@ pub fn validate_talos_environment() -> Result<(), String> {
 
 fn test_workshops() -> Vec<Workshop> {
     vec![Workshop {
-            name: "workshop".to_string(),
-            image: "traefik/whoami".to_string(),
-            description: "The host didn't finish setting this up".to_string(),
+        name: "workshop".to_string(),
+        image: "traefik/whoami".to_string(),
+        description: "The host didn't finish setting this up".to_string(),
     }]
 }
 

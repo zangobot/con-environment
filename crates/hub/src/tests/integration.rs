@@ -21,7 +21,10 @@ async fn test_orchestrator_creates_pod_and_service() {
 
     // First call should trigger pod creation (returns PodNotReady since pod isn't running yet)
     info!("Calling get_or_create_pod for the first time");
-    let first_result = ctx.orchestrator.get_or_create_pod(user_id, "workshop").await;
+    let first_result = ctx
+        .orchestrator
+        .get_or_create_pod(user_id, "workshop")
+        .await;
     trace!(result = ?first_result, "First get_or_create_pod result");
 
     // The orchestrator returns PodNotReady when a pod is created but not yet ready
@@ -49,7 +52,10 @@ async fn test_orchestrator_creates_pod_and_service() {
 
     // Second call for same user should be idempotent
     info!("Calling get_or_create_pod again (idempotency check)");
-    let second_result = ctx.orchestrator.get_or_create_pod(user_id, "workshop").await;
+    let second_result = ctx
+        .orchestrator
+        .get_or_create_pod(user_id, "workshop")
+        .await;
     trace!(result = ?second_result, "Second get_or_create_pod result");
 
     // Pod count should remain the same
@@ -82,15 +88,18 @@ async fn test_pod_limit_enforcement() {
     // We'll create pods up to the limit
     // Note: The orchestrator's in-memory HashMap tracks pods, so we need to
     // ensure the orchestrator sees them
-    
+
     info!("Creating pods up to the limit");
     for i in 0..pod_limit {
         let user_id = format!("limit-user-{}", i);
         debug!(user_id = %user_id, index = i, "Creating pod");
-        
-        let result = ctx.orchestrator.get_or_create_pod(&user_id, "workshop").await;
+
+        let result = ctx
+            .orchestrator
+            .get_or_create_pod(&user_id, "workshop")
+            .await;
         trace!(result = ?result, "Pod creation result");
-        
+
         // Should either succeed or return PodNotReady (which means it was created)
         match result {
             Ok(_) | Err(HubError::PodNotReady) => {
@@ -112,13 +121,19 @@ async fn test_pod_limit_enforcement() {
 
     // Populate orchestrator's in-memory state from K8s
     info!("Populating orchestrator state from K8s");
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // Now try to create one more - should fail with PodLimitReached
     let over_limit_user = format!("limit-user-{}", pod_limit);
     info!(user_id = %over_limit_user, "Attempting to create pod over limit");
 
-    let over_limit_result = ctx.orchestrator.get_or_create_pod(&over_limit_user, "workshop").await;
+    let over_limit_result = ctx
+        .orchestrator
+        .get_or_create_pod(&over_limit_user, "workshop")
+        .await;
     debug!(result = ?over_limit_result, "Over-limit creation result");
 
     match over_limit_result {
@@ -148,9 +163,12 @@ async fn test_concurrent_pod_creation() {
 
     // Wrap context in Arc for sharing across tasks
     let orchestrator = ctx.orchestrator.clone();
-    
+
     let num_concurrent = 5;
-    info!(num_concurrent = num_concurrent, "Spawning concurrent pod creation tasks");
+    info!(
+        num_concurrent = num_concurrent,
+        "Spawning concurrent pod creation tasks"
+    );
 
     // Spawn multiple concurrent pod creation requests
     let mut handles = vec![];
@@ -176,18 +194,16 @@ async fn test_concurrent_pod_creation() {
     // Check results
     for (i, result) in results.iter().enumerate() {
         trace!(task_index = i, result = ?result, "Task result");
-        
+
         match result {
-            Ok(inner_result) => {
-                match inner_result {
-                    Ok(_) | Err(HubError::PodNotReady) => {
-                        debug!(task_index = i, "Task succeeded or pod pending");
-                    }
-                    Err(e) => {
-                        warn!(task_index = i, error = ?e, "Task returned error");
-                    }
+            Ok(inner_result) => match inner_result {
+                Ok(_) | Err(HubError::PodNotReady) => {
+                    debug!(task_index = i, "Task succeeded or pod pending");
                 }
-            }
+                Err(e) => {
+                    warn!(task_index = i, error = ?e, "Task returned error");
+                }
+            },
             Err(join_error) => {
                 panic!("Task {} panicked: {:?}", i, join_error);
             }
@@ -228,29 +244,43 @@ async fn test_orchestrator_state_recovery() {
 
     // Create a pod directly using test helpers (bypassing orchestrator)
     info!("Creating pod directly via test helper");
-    let pod = ctx.create_test_pod(user_id).await.expect("Failed to create test pod");
+    let pod = ctx
+        .create_test_pod(user_id)
+        .await
+        .expect("Failed to create test pod");
     let pod_name = pod.metadata.name.as_ref().unwrap();
     debug!(pod_name = %pod_name, "Test pod created");
 
     // Also create the matching service
-    ctx.create_test_service(user_id).await.expect("Failed to create test service");
+    ctx.create_test_service(user_id)
+        .await
+        .expect("Failed to create test service");
     debug!("Test service created");
 
     // Verify resources exist
-    assert!(ctx.pod_exists(pod_name).await, "Pod should exist after creation");
-    
+    assert!(
+        ctx.pod_exists(pod_name).await,
+        "Pod should exist after creation"
+    );
+
     // Wait for pod to be running
     info!("Waiting for pod to reach Running state");
     ctx.wait_for_pod_running(pod_name).await.ok();
 
     // Now call populate to sync orchestrator state
     info!("Calling orchestrator.populate() to recover state");
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // The orchestrator should now be aware of this pod
     // Calling get_or_create_pod should find the existing pod
     info!("Calling get_or_create_pod after populate");
-    let result = ctx.orchestrator.get_or_create_pod(user_id, "workshop").await;
+    let result = ctx
+        .orchestrator
+        .get_or_create_pod(user_id, "workshop")
+        .await;
     trace!(result = ?result, "get_or_create_pod result after recovery");
 
     // Should either return a URL (if healthy) or PodNotReady
@@ -282,13 +312,19 @@ async fn test_orchestrator_delete() {
 
     // Create a pod through the orchestrator
     info!("Creating pod through orchestrator");
-    let _ = ctx.orchestrator.get_or_create_pod(user_id, "workshop").await;
+    let _ = ctx
+        .orchestrator
+        .get_or_create_pod(user_id, "workshop")
+        .await;
 
     // Wait a moment for resources to be created
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // Populate to ensure state is synced
-    ctx.orchestrator.populate().await.expect("Failed to populate");
+    ctx.orchestrator
+        .populate()
+        .await
+        .expect("Failed to populate");
 
     // Verify we have resources
     let initial_count = ctx.count_managed_pods().await;

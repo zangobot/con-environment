@@ -1,13 +1,15 @@
 use async_trait::async_trait;
 use axum::{
-    Router, response::{Html, IntoResponse, Response}, routing::get
+    Router,
+    response::{Html, IntoResponse, Response},
+    routing::get,
 };
 use pingora::server::Fds;
 use reqwest::StatusCode;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     signal,
-    sync::{watch::Receiver, Mutex},
+    sync::{Mutex, watch::Receiver},
 };
 use tower_cookies::CookieManagerLayer;
 

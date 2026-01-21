@@ -43,9 +43,7 @@ impl ManagedPod {
 
     /// Returns the number of seconds since the ManagedPod was created.
     pub fn age(&self) -> i64 {
-        Utc::now()
-            .signed_duration_since(self.created)
-            .num_seconds()
+        Utc::now().signed_duration_since(self.created).num_seconds()
     }
 
     /// Returns health.idle_seconds if available, otherwise returns age.

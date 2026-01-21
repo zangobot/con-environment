@@ -14,7 +14,8 @@ impl BackgroundService for GarbageCollector {
         info!("GC: Starting garbage collector background service");
 
         let orchestrator = crate::orchestrator().await;
-        let gc_interval = Duration::from_secs(orchestrator.config.garbage_collection_seconds as u64);
+        let gc_interval =
+            Duration::from_secs(orchestrator.config.garbage_collection_seconds as u64);
 
         let mut interval = tokio::time::interval(gc_interval);
         // First tick completes immediately; skip it to avoid running GC on startup

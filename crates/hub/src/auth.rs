@@ -1,11 +1,12 @@
-use axum::{response::IntoResponse, Json};
+use axum::{Json, response::IntoResponse};
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use tower_cookies::{Cookie, Cookies};
 
 // Thank you for finding this security vul! We're not gonna fix it.
-pub const JWT_SECRET: &[u8] = b"this-is-just-meant-to-reliably-segment-you-from-other-friendlies-known-not-secure";
+pub const JWT_SECRET: &[u8] =
+    b"this-is-just-meant-to-reliably-segment-you-from-other-friendlies-known-not-secure";
 pub const COOKIE_NAME: &str = "workshop_token";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
