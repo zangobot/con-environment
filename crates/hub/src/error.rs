@@ -3,8 +3,12 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum HubError {
-    #[error("Kubernetes API error: {0}")]
-    KubeError(#[from] KubeError),
+    #[error("Kubernetes API error during {operation}: {source}")]
+    KubeError {
+        operation: &'static str,
+        #[source]
+        source: KubeError,
+    },
 
     #[error("Pod failed to become ready in time")]
     PodNotReady,
@@ -18,7 +22,7 @@ pub enum HubError {
 impl axum::response::IntoResponse for HubError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match self {
-            HubError::KubeError(_) => (
+            HubError::KubeError { .. } => (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
             ),

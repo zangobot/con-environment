@@ -6,22 +6,7 @@ use tracing::info;
 
 use pingora::services::background::BackgroundService;
 
-use crate::orchestrator::Orchestrator;
-
 pub struct GarbageCollector;
-
-impl GarbageCollector {
-    async fn inner_cleanup_idle_pods(orchestrator: &Orchestrator) -> Result<usize, crate::HubError> {
-        // Delegate to the orchestrator's existing GC logic
-        orchestrator.gc().await
-    }
-
-    #[cfg(test)]
-    pub async fn cleanup_idle_pods() -> Result<usize, crate::HubError> {
-        let orchestrator = crate::orchestrator().await;
-        Self::inner_cleanup_idle_pods(orchestrator).await
-    }
-}
 
 #[async_trait]
 impl BackgroundService for GarbageCollector {
@@ -29,7 +14,7 @@ impl BackgroundService for GarbageCollector {
         info!("GC: Starting garbage collector background service");
 
         let orchestrator = crate::orchestrator().await;
-        let gc_interval = Duration::from_secs(orchestrator.config.garbarge_collection_seconds as u64);
+        let gc_interval = Duration::from_secs(orchestrator.config.garbage_collection_seconds as u64);
 
         let mut interval = tokio::time::interval(gc_interval);
         // First tick completes immediately; skip it to avoid running GC on startup
@@ -39,7 +24,7 @@ impl BackgroundService for GarbageCollector {
             tokio::select! {
                 _ = interval.tick() => {
                     info!("GC: Running cleanup cycle");
-                    match Self::inner_cleanup_idle_pods(orchestrator).await {
+                    match orchestrator.gc().await {
                         Ok(count) if count > 0 => {
                             info!("GC: Cleaned up {} idle/expired pods", count);
                         }

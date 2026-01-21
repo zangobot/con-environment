@@ -37,8 +37,8 @@ impl ProxyHttp for WorkshopProxy {
                 }
                 Err(HubError::PodLimitReached) => "/aiv-workshop-at-capacity",
                 Err(HubError::PodNotReady) => "/aiv-workshop-pending",
-                Err(HubError::KubeError(e)) => {
-                    tracing::error!("Unhandled orchestrator error for {}: {:?}", user.user_id, e);
+                Err(HubError::KubeError{ operation, source }) => {
+                    tracing::error!("Unhandled orchestrator error for {}, during: {}: {:?}", user.user_id, operation, source);
                     "/aiv-workshop-error"
                 }
             }

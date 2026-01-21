@@ -35,7 +35,7 @@ pub fn get_test_config() -> Arc<Config> {
         workshop_mem_limit: "256Mi".to_string(),
         sidecar_health_port: 9000,
         sidecar_proxy_port: 8888,
-        garbarge_collection_seconds: 300,
+        garbage_collection_seconds: 300,
     })
 }
 
@@ -44,8 +44,8 @@ pub fn get_gc_test_config() -> Arc<Config> {
     Arc::new(Config {
         workshop_name: "gc-test-workshop".to_string(),
         workshop_namespace: "test-workshops".to_string(), // Cross-namespace
-        workshop_ttl_seconds: 30,                         // 30 seconds for quick TTL testing
-        workshop_idle_seconds: 10,                        // 10 seconds for quick idle testing
+        workshop_ttl_seconds: 0,
+        workshop_idle_seconds: 0,
         workshop_image: "nginxdemos/hello".to_string(),
         workshop_port: 80,
         workshop_pod_limit: 5,
@@ -55,6 +55,6 @@ pub fn get_gc_test_config() -> Arc<Config> {
         workshop_mem_limit: "128Mi".to_string(),
         sidecar_health_port: 9000,
         sidecar_proxy_port: 8888,
-        garbarge_collection_seconds: 300,
+        garbage_collection_seconds: 300,
     })
 }

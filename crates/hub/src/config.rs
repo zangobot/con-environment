@@ -60,8 +60,8 @@ pub struct Config {
     pub workshop_mem_limit: String,
 
     /// Workshop container memory limit.
-    #[serde(default = "default_garbarge_collection_seconds")]
-    pub garbarge_collection_seconds: i64,
+    #[serde(default = "default_garbage_collection_seconds")]
+    pub garbage_collection_seconds: i64,
 }
 
 fn default_workshop_name() -> String {
@@ -105,7 +105,7 @@ fn default_workshop_mem_request() -> String {
 fn default_workshop_mem_limit() -> String {
     "512Mi".to_string()
 }
-fn default_garbarge_collection_seconds() -> i64 {
+fn default_garbage_collection_seconds() -> i64 {
     300
 }
 

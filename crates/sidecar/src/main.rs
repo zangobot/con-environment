@@ -1,8 +1,8 @@
-use std::sync::{
-    atomic::{AtomicI64, Ordering},
-    Arc,
-};
+use std::{sync::{
+    Arc, atomic::{AtomicI64, Ordering}
+}, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::signal;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 mod config;
@@ -96,9 +96,36 @@ async fn main() {
         }
     });
 
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
     // 4. Run the TCP proxy server (blocking)
     info!("Starting TCP proxy server...");
-    if let Err(e) = proxy::run_proxy(state, config).await {
-        error!("TCP proxy server failed: {}", e);
+    tokio::select! {
+        result = proxy::run_proxy(state.clone(), config.clone()) => {
+            if let Err(e) = result {
+                error!("TCP proxy server failed: {}", e);
+            }
+        }
+        _ = ctrl_c => {
+            info!("Received shutdown signal");
+        }
+        _ = terminate => {
+            info!("Received shutdown signal");
+        }
     }
+    
+    // Give active connections time to drain
+    tokio::time::sleep(Duration::from_secs(5)).await;
 }

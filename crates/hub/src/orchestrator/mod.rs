@@ -79,7 +79,9 @@ impl Orchestrator {
             LABEL_WORKSHOP_NAME, &self.config.workshop_name
         ));
 
-        let k_pods = self.pod_api.list(&list_params).await?;
+        let k_pods = self.pod_api.list(&list_params).await.map_err(|source| {
+            HubError::KubeError { operation: "populate", source }
+        })?;
         
         // Lockless iteration over K8s results
         for k_pod in k_pods.items {
@@ -175,7 +177,7 @@ impl Orchestrator {
         };
 
         info!("Recovered existing K8s pod for user {}", user_id);
-
+        // This returns the updated value
         let updated = self.pods.update(
             user_id.to_string(),
             |mp| {
@@ -293,7 +295,9 @@ impl Orchestrator {
         // We use a separate scope to ensure the guard is dropped before awaiting any async calls.
         let guard = self.guard();
         match {
-            self.check_health(user_id, &guard).await?
+            self.check_health(user_id, &guard).await.map_err(|source| {
+                HubError::KubeError { operation: "get_or_create_pod", source }
+            })?
         } {
             PodStatus::Healthy(_ , url) => return Ok(url),
             PodStatus::Old(mp) => {
@@ -338,7 +342,9 @@ impl Orchestrator {
         let expires_at = Utc::now().timestamp() + self.config.workshop_ttl_seconds;
 
         let pod_spec = create_workshop_pod_spec(&pod_name, user_id, &self.config, expires_at);
-        let pod = self.pod_api.create(&PostParams::default(), &pod_spec).await?;
+        let pod = self.pod_api.create(&PostParams::default(), &pod_spec).await.map_err(|source| {
+                HubError::KubeError { operation: "get_or_create_pod", source }
+            })?;
         info!("Created pod {}", pod_name);
 
         let owner_ref = OwnerReference {
@@ -350,7 +356,9 @@ impl Orchestrator {
         };
 
         let svc_spec = create_workshop_service_spec(&pod_name, &pod_name, user_id, &self.config.workshop_name, owner_ref, &self.config);
-        self.svc_api.create(&PostParams::default(), &svc_spec).await?;
+        self.svc_api.create(&PostParams::default(), &svc_spec).await.map_err(|source| {
+                HubError::KubeError { operation: "get_or_create_pod", source }
+            })?;
 
         self.pods.insert(user_id.to_string(), ManagedPod::default(), &guard);
         Err(HubError::PodNotReady)
@@ -364,7 +372,7 @@ pub async fn gc(&self) -> Result<usize, HubError> {
 
     // 1. SCAN: Identify candidates (Fast, Lock-free read)
     for (user_id, mp) in self.pods.iter(&guard) {
-        let is_idle = (mp.idle() as i64) > self.config.workshop_idle_seconds;
+        let is_idle = mp.idle() > self.config.workshop_idle_seconds;
 
         let is_expired = mp
             .pod()
