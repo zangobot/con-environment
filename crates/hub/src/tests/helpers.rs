@@ -223,7 +223,7 @@ impl TestContext {
                     "name": "workshop",
                     "image": self.config().workshops[0].image,
                     "ports": [{
-                        "containerPort": self.config().workshop_port
+                        "containerPort": 80
                     }],
                     "resources": {
                         "requests": {
@@ -279,8 +279,8 @@ impl TestContext {
                 "selector": selector,
                 "ports": [{
                     "protocol": "TCP",
-                    "port": self.config().workshop_port,
-                    "targetPort": self.config().workshop_port,
+                    "port": 8080,
+                    "targetPort": 8080,
                 }]
             }
         }))

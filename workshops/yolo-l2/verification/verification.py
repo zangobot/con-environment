@@ -7,14 +7,14 @@ import os
 app = Flask(__name__)
 
 # --- CONFIG ---
-FLAG = os.environ("FLAG", "ChristianSzegedy")
-SOURCE_IMAGE_PATH = os.environ("SOURCE_IMAGE_PATH", "nika.png")
-L2_THRESHOLD = os.environ("L2_THRESHOLD", 50.0 )
-ORIGINAL_CLASS_ID = os.environ("ORIGINAL_CLASS_ID", 0)
+FLAG = os.environ.get("FLAG", "ChristianSzegedy")
+SOURCE_IMAGE_PATH = os.environ.get("SOURCE_IMAGE_PATH", "nika.png")
+L2_THRESHOLD = os.environ.get("L2_THRESHOLD", 50.0 )
+ORIGINAL_CLASS_ID = os.environ.get("ORIGINAL_CLASS_ID", 0)
 
 # Load resources once on startup
 print("Loading Model and Reference Image...")
-model = YOLO("YOLO11n-cls.pt") 
+model = YOLO("yolo11n-cls.pt") 
 ref_img = Image.open(SOURCE_IMAGE_PATH).convert("RGB")
 REF_IMG_ARRAY = np.array(ref_img, dtype=np.float32)
 REF_SHAPE = REF_IMG_ARRAY.shape

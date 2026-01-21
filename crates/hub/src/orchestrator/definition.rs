@@ -7,7 +7,7 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference}
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use std::collections::BTreeMap;
 
-use crate::config;
+use crate::config::{Config, Workshop};
 use crate::orchestrator::{
     HUB_ID, LABEL_MANAGED_BY, LABEL_USER_ID, LABEL_WORKSHOP_NAME, TTL_ANNOTATION,
 };
@@ -15,15 +15,14 @@ use crate::orchestrator::{
 pub fn create_workshop_pod_spec(
     pod_name: &str,
     user_id: &str,
-    workshop_name: &str,
-    image: &str,
-    config: &config::Config,
+    workshop: &Workshop,
+    config: &Config,
     expires_at_timestamp: i64,
 ) -> Pod {
     // 1. Prepare Metadata
     let mut labels = BTreeMap::new();
     labels.insert(LABEL_USER_ID.to_string(), user_id.to_string());
-    labels.insert(LABEL_WORKSHOP_NAME.to_string(), workshop_name.to_string());
+    labels.insert(LABEL_WORKSHOP_NAME.to_string(), workshop.name.clone());
     labels.insert(LABEL_MANAGED_BY.to_string(), HUB_ID.to_string());
     labels.insert("app".to_string(), pod_name.to_string());
 
@@ -51,13 +50,26 @@ pub fn create_workshop_pod_spec(
         Quantity(config.workshop_mem_limit.to_string()),
     );
 
+    let workshop_env = if workshop.env.is_empty() {
+        None
+    } else {
+        Some(workshop.env.iter().map(|(k,v)| {
+            EnvVar {
+                name: k.clone(),
+                value: Some(v.clone()),
+                ..Default::default()
+            }
+        }).collect::<Vec<_>>())
+    };
+    
+
     // 3. Define Containers
     let workshop_container = Container {
         name: "workshop".to_string(),
-        image: Some(image.to_string()),
+        image: Some(workshop.image.clone()),
         image_pull_policy: Some("Always".to_string()),
         ports: Some(vec![ContainerPort {
-            container_port: config.workshop_port as i32,
+            container_port: workshop.port,
             ..Default::default()
         }]),
         resources: Some(ResourceRequirements {
@@ -65,6 +77,7 @@ pub fn create_workshop_pod_spec(
             requests: Some(resource_requests),
             claims: None,
         }),
+        env: workshop_env,
         ..Default::default()
     };
 
@@ -85,7 +98,7 @@ pub fn create_workshop_pod_spec(
             },
             EnvVar {
                 name: "SIDECAR_TARGET_TCP".to_string(),
-                value: Some(format!("127.0.0.1:{}", config.workshop_port)),
+                value: Some(format!("127.0.0.1:{}", workshop.port)),
                 ..Default::default()
             },
         ]),
@@ -151,7 +164,7 @@ pub fn create_workshop_service_spec(
     user_id: &str,
     workshop_name: &str,
     owner_ref: OwnerReference,
-    config: &config::Config,
+    config: &Config,
 ) -> Service {
     let mut labels = BTreeMap::new();
     labels.insert(LABEL_USER_ID.to_string(), user_id.to_string());

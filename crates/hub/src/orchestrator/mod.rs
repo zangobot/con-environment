@@ -483,8 +483,7 @@ impl Orchestrator {
         let pod_spec = definition::create_workshop_pod_spec(
             &pod_name,
             user_id,
-            workshop_name,
-            &workshop.image,
+            workshop,
             &self.config,
             expires_at,
         );

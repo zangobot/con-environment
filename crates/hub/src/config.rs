@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use serde::Deserialize;
 use tracing::{debug, info};
@@ -11,6 +11,9 @@ pub struct Workshop {
     pub image: String,
     /// The container image to use for the workshop.
     pub description: String,
+    /// The port the container is listening on
+    pub port: i32,
+    pub env: HashMap<String, String>,
 }
 
 /// Top-level configuration loaded from environment variables.
@@ -32,17 +35,13 @@ pub struct Config {
     #[serde(default = "default_workshop_idle")]
     pub workshop_idle_seconds: i64,
 
-    /// The internal port the workshop container listens on.
-    #[serde(default = "default_workshop_port")]
-    pub workshop_port: u16,
-
     /// The port the sidecar forwards traffic to the workshop on.
     #[serde(default = "default_sidecar_proxy_port")]
-    pub sidecar_proxy_port: u16,
+    pub sidecar_proxy_port: i32,
 
     /// The port the sidecar listens on for health reporting.
     #[serde(default = "default_sidecar_health_port")]
-    pub sidecar_health_port: u16,
+    pub sidecar_health_port: i32,
 
     /// Max number of concurrent workshop pods allowed to run.
     #[serde(default = "default_workshop_pod_limit")]
@@ -75,11 +74,13 @@ impl Config {
     }
 }
 
-fn default_workshop() -> Vec<Workshop> {
+pub(crate) fn default_workshop() -> Vec<Workshop> {
     vec![Workshop {
         name: "workshop".to_string(),
         image: "traefik/whoami".to_string(),
         description: "The host didn't finish setting this up".to_string(),
+        port: 80,
+        env: HashMap::new(),
     }]
 }
 fn default_workshop_namespace() -> String {
@@ -92,16 +93,16 @@ fn default_workshop_idle() -> i64 {
     60 * 60
 } // 1 hour
 
-fn default_workshop_port() -> u16 {
+fn default_workshop_port() -> i32 {
     80
 }
 fn default_workshop_pod_limit() -> usize {
     10
 }
-fn default_sidecar_proxy_port() -> u16 {
+fn default_sidecar_proxy_port() -> i32 {
     8888
 }
-fn default_sidecar_health_port() -> u16 {
+fn default_sidecar_health_port() -> i32 {
     9000
 }
 fn default_workshop_cpu_request() -> String {

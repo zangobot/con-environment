@@ -1,4 +1,4 @@
-use crate::config::{Config, Workshop};
+use crate::config::{Config, Workshop, default_workshop};
 
 /// Validates that we're running in the correct test environment
 pub fn validate_talos_environment() -> Result<(), String> {
@@ -18,22 +18,14 @@ pub fn validate_talos_environment() -> Result<(), String> {
     Ok(())
 }
 
-fn test_workshops() -> Vec<Workshop> {
-    vec![Workshop {
-        name: "workshop".to_string(),
-        image: "traefik/whoami".to_string(),
-        description: "The host didn't finish setting this up".to_string(),
-    }]
-}
 
 /// Get base test configuration with reasonable defaults
 pub fn get_test_config() -> Config {
     Config {
-        workshops: test_workshops(),
+        workshops: default_workshop(),
         workshop_namespace: "test-workshops".to_string(), // Cross-namespace: workshops go here
         workshop_ttl_seconds: 600,                        // 10 minutes
         workshop_idle_seconds: 120,                       // 2 minutes
-        workshop_port: 80,
         workshop_pod_limit: 10,
         workshop_cpu_request: "50m".to_string(),
         workshop_cpu_limit: "200m".to_string(),
@@ -48,11 +40,10 @@ pub fn get_test_config() -> Config {
 /// Get configuration optimized for GC tests (shorter timeouts)
 pub fn get_gc_test_config() -> Config {
     Config {
-        workshops: test_workshops(),
+        workshops: default_workshop(),
         workshop_namespace: "test-workshops".to_string(), // Cross-namespace
         workshop_ttl_seconds: 0,
         workshop_idle_seconds: 0,
-        workshop_port: 80,
         workshop_pod_limit: 5,
         workshop_cpu_request: "50m".to_string(),
         workshop_cpu_limit: "100m".to_string(),
