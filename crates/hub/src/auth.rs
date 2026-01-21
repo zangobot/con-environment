@@ -1,3 +1,9 @@
+//! This is just to make sure we don't let users accidentally
+//! log in as each other. If they intentionally do that, it's fine.
+//! 
+//! We can correct this later, if needed. Workshops at security cons
+//! are usually fun benign afairs. 
+
 use axum::{Json, response::IntoResponse};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -61,10 +67,10 @@ pub async fn handle_login(
         cookies.remove(Cookie::from(COOKIE_NAME));
     }
 
-    let user_id = format!("user-{}", sanitize_username(&login_req.username));
+    let sanitized = sanitize_username(&login_req.username);
 
     // Check if the sanitized username is at least 4 characters
-    if user_id.len() < 4 {
+    if sanitized.len() < 4 {
         tracing::warn!("Login failed: Username '{}' is too short after sanitization", login_req.username);
         return Json(LoginResponse {
             success: false,
@@ -72,6 +78,7 @@ pub async fn handle_login(
             redirect: None,
         });
     }
+    let user_id = format!("user-{}", sanitized);
 
     let iat = Utc::now();
     let expiration = Utc::now() + Duration::hours(24);
@@ -112,6 +119,7 @@ pub async fn handle_login(
     cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
     cookie.set_path("/");
     cookie.set_max_age(tower_cookies::cookie::time::Duration::hours(24));
+    // cookie.set_secure(true);
 
     tracing::debug!("Setting cookie with max_age: 24 hours");
     cookies.add(cookie);

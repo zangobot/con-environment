@@ -92,7 +92,8 @@ async fn main() {
     tokio::spawn(async move {
         info!("Starting HTTP health server...");
         if let Err(e) = http_server::run_http_server(http_state, http_config).await {
-            panic!("HTTP health server failed: {}", e);
+            error!("HTTP health server failed: {}", e);
+            std::process::exit(1);
         }
     });
 

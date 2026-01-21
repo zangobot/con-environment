@@ -433,7 +433,7 @@ impl Orchestrator {
                 let pod = mp.pod();
                 match pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
                     Some(pod_ip) => {
-                        let url = format!("{}:{}", pod_ip, self.config.sidecar_proxy_port);
+                        let url = self.build_proxy_url(pod_ip);
                         return Ok(url);
                     }
                     None => {
@@ -471,7 +471,7 @@ impl Orchestrator {
         }
 
         // C. Create Resources
-        let pod_name = format!("{}-{}-{}", workshop_name, user_id, generate_suffix());
+        let pod_name = format!("{}-{}", workshop_name, user_id);
         let expires_at = Utc::now().timestamp() + self.config.workshop_ttl_seconds;
 
         let pod_spec = definition::create_workshop_pod_spec(
@@ -513,14 +513,11 @@ impl Orchestrator {
             owner_ref,
             &self.config,
         );
-        self.svc_api
-            .create(&PostParams::default(), &svc_spec)
-            .await
-            .map_err(|source| {
-                tracing::error!(?source, "Kubernetes error while creating service");
-                HubError::Error(format!("Kubernetes error while creating service {}", source))
-            })?;
-
+        if let Err(e) = self.svc_api.create(&PostParams::default(), &svc_spec).await {
+            tracing::error!(?e, "Service creation failed, rolling back pod");
+            let _ = self.pod_api.delete(&pod_name, &DeleteParams::default()).await;
+            return Err(HubError::Error(format!("Service creation failed: {}", e)));
+        }
         self.pods.insert(session_key, ManagedPod::new(pod), &guard);
         Err(HubError::PodNotReady)
     }
@@ -630,16 +627,4 @@ impl Orchestrator {
 
         Ok(deleted_count)
     }
-}
-
-// --- Helpers ---
-
-fn generate_suffix() -> String {
-    use rand::Rng;
-    rand::rng()
-        .sample_iter(&rand::distr::Alphanumeric)
-        .take(6)
-        .map(char::from)
-        .collect::<String>()
-        .to_lowercase()
 }
