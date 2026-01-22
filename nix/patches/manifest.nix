@@ -10,7 +10,7 @@ let
 
 in {
     install = ./install.yaml;
-    control-schedule = ./control-schedule.yaml;
+    control-schedule = ./control/schedule.yaml;
     cilium = (ciliumFile);
     ghcr = (ghcrAuthFile);
   }
