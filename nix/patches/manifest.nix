@@ -7,10 +7,19 @@ let
   ghcrAuthFile = import ./ghcr.nix {
     inherit pkgs;
   };
+  nfsFile = import ./nfs.nix {
+    inherit pkgs;
+  };
+  nvidiaFile = import ./nvidia.nix {
+    inherit pkgs;
+  };
 
 in {
-    install = ./install.yaml;
-    control-schedule = ./control/schedule.yaml;
-    cilium = (ciliumFile);
-    ghcr = (ghcrAuthFile);
+    all = [
+      (ciliumFile)
+      (ghcrAuthFile)
+      ./install.yaml
+    ];
+    control = [./control/schedule.yaml];
+    worker = [];
   }

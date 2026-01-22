@@ -17,10 +17,6 @@ pkgs.writeShellScriptBin "generate-patches" ''
   echo "🚀 Generating patches to: $TARGET_DIR"
   mkdir -p "$TARGET_DIR"
 
-  cp -f "${patches.cilium}" "$TARGET_DIR/cilium.yaml"
-  cp -f "${patches.control-schedule}" "$TARGET_DIR/control-schedule.yaml"
-  cp -f "${patches.ghcr}" "$TARGET_DIR/ghcr.yaml"
-  cp -f "${patches.install}" "$TARGET_DIR/install.yaml"
   cp -f -r "${config}" "$TARGET_DIR/config"
 
   echo "✅ Done."
