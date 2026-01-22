@@ -27,7 +27,9 @@ pkgs.runCommand "talos-config" {
     --talos-version "${talosVersion}" \
     ${patchFlags} \
     ${controlPatchFlags} \
-    ${workerPatchFlags}
+    ${workerPatchFlags} \
+    
 
   echo "✅ Configuration generated in $out"
 ''
+  # --with-secrets ${secrets}

@@ -1,17 +1,40 @@
 { config, pkgs, inputs, ... }:
   let
+    ip = "10.211.0.10";
+    controlIp = "10.211.0.20";
     inspectorBuild = inputs.self.nixosConfigurations.inspector.config.system.build;
     bootScript = pkgs.writeText "boot.ipxe" ''
       #!ipxe
       dhcp
       echo Starting Inspector Boot...
-      kernel tftp://10.211.0.10/bzImage init=${inspectorBuild.toplevel}/init loglevel=4
-      initrd tftp://10.211.0.10/initrd
+      kernel tftp://${ip}/bzImage init=${inspectorBuild.toplevel}/init loglevel=4
+      initrd tftp://${ip}/initrd
       boot
     '';
-    patchGenerator = import ../patches/generator.nix { 
+    clusterConfig = import ./talos-config.nix { 
       inherit pkgs inputs lib;
-      patchDir = "/mnt/data/patches";
+      talosConfig = "talosConfig";
+      clusterName = "aivProd";
+      talosVersion = "v1.12.1";
+      vIp = controlIp;
+      nfsServer = ip;
+      mainPath = "/mnt/data/dynamic-pvc";
+      vllmPath = "/mnt/data/model-store";
+    };
+    talosImages = import ./talos-image.nix { 
+      inherit pkgs; 
+      version = "v1.12.1";
+      platform = "metal";
+      arch = "amd64";
+      systemExtensions = [
+        "siderolabs/amd-ucode"
+        "siderolabs/intel-ucode"
+        "siderolabs/nonfree-kmod-nvidia-lts"
+        "siderolabs/nvidia-container-toolkit-lts"
+      ];
+      sha256 = "sha256-xbWnVCIH9JMp9nyBnUKyCZsHafKUtr0ZfOwTqHdlMWU=";
+
+      diskImage = "pxe-assets";
     };
   in
 {
@@ -48,7 +71,7 @@
   # ==========================================
   
   networking.interfaces.enp1s0.ipv4.addresses = [{
-    address = "10.211.0.10";
+    address = ip;
     prefixLength = 24;
   }];
   networking.defaultGateway = "10.211.0.1";
@@ -160,16 +183,17 @@
       # Options
       dhcp-option = [
         "option:router,10.211.0.1"
-        "option:dns-server,10.211.0.10"
+        "option:dns-server,${ip}"
       ];
 
       # Static Hosts
       dhcp-host = [
-        "aa:bb:cc:dd:ee:01,10.211.0.20,proxmox-node-01"
-        "aa:bb:cc:dd:ee:02,10.211.0.21,k8s-control-plane"
-        "aa:bb:cc:dd:ee:03,10.211.0.22,k8s-worker-01"
+        "aa:bb:cc:dd:ee:01,${controlIp},k8s-control-plane"
+        "aa:bb:cc:dd:ee:02,10.211.0.21,k8s-worker-01"
+        "aa:bb:cc:dd:ee:03,10.211.0.22,k8s-worker-02"
+        "aa:bb:cc:dd:ee:03,10.211.0.24,k8s-worker-03"
       ];
-      address = [ "/nas/10.211.0.10" ];
+      address = [ "/nas/${ip}" ];
 
       # ==========================================
       # TFTP & PXE Configuration

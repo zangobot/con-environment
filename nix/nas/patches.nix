@@ -1,11 +1,11 @@
 { pkgs, lib, inputs, nfsServer, mainPath, vllmPath }:
 let
-  # Import the manifest defined in Step 1
   patches = import ../patches/manifest.nix { 
     inherit pkgs lib inputs nfsServer mainPath vllmPath;
   };
   config = import ./talos-config.nix { 
     inherit pkgs lib inputs nfsServer mainPath vllmPath;
+    #secrets = talosSecretsFile;
     clusterName = "aivProd";
     talosVersion = "v1.12.1";
     vIp = "10.211.0.20";

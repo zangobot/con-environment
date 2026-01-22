@@ -21,7 +21,7 @@ let
     mainPath = "/mnt/data/dynamic-pvc";
     vllmPath = "/mnt/data/models";
   };
-
+  
   talosPxe = import ./nas/talos-image.nix { 
     inherit pkgs; 
   } {
@@ -82,6 +82,8 @@ let
     k9s
     cilium-cli
     hubble
+    sops
+    ssh-to-age
   ] ++ myContainerScripts ++ [ rustToolchain nasPatchGenerator talosPxe ];
 in
 {

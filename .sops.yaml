@@ -1,0 +1,8 @@
+keys:
+  - &sven_age_key "age1xyy9gzv3aufnsfsmdd7sunzk3guxez96d6mvjwe72vzm5l2jvvwq7hgpak"
+
+creation_rules:
+  - path_regex: secrets.yaml$
+    key_groups:
+    - age:
+      - *sven_age_key
