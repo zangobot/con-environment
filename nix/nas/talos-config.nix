@@ -2,7 +2,6 @@
 
 let
   clusterEndpoint = "https://${vIp}:6443";
-  
   patchesSet = import ../patches/manifest.nix { inherit pkgs lib inputs; };
   patchList = lib.attrValues patchesSet;
   patchFlags = lib.concatMapStringsSep " " (p: "--config-patch @${p}") patchList;
@@ -22,6 +21,7 @@ pkgs.runCommand "talos-config" {
   talosctl gen config \
     "${clusterName}" \
     "${clusterEndpoint}" \
+    --install-disk "" \
     --output "$out" \
     --talos-version "${talosVersion}" \
     ${patchFlags}

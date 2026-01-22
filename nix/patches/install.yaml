@@ -1,5 +1,6 @@
 machine:
   install:
+    disk: null
     wipe: true
     diskSelector:
       size: 512110190592
@@ -9,3 +10,6 @@ machine:
       - name: nvidia_uvm
       - name: nvidia_drm
       - name: nvidia_modeset
+      
+cluster:
+  allowSchedulingOnControlPlanes: true

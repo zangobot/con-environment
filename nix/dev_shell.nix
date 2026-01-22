@@ -19,22 +19,23 @@ let
     lib = pkgs.lib;
   };
 
-  talosIso = import ./nas/talos-iso.nix { 
+  talosPxe = import ./nas/talos-image.nix { 
     inherit pkgs; 
   } {
     version = "v1.12.1";
-    diskImage = "pxe";
+    platform = "metal";
+    arch = "amd64";
     systemExtensions = [
       "siderolabs/amd-ucode"
       "siderolabs/intel-ucode"
       "siderolabs/nonfree-kmod-nvidia-lts"
       "siderolabs/nvidia-container-toolkit-lts"
     ];
-    sha256 = "sha256-wb6nJF3vETvURTtmXGQzHTos1V/fUBmVHO/AZlF2WdE="; 
+    sha256 = "sha256-xbWnVCIH9JMp9nyBnUKyCZsHafKUtr0ZfOwTqHdlMWU=";
+
+    diskImage = "pxe-assets";
   };
 
-  # --- DEFINE YOUR CONFIG ---
-  # Just add new items here!
   myContainerScripts = mkContainerScripts [
     # Standard Dockerfile builds (type="docker" is default)
     {
@@ -78,7 +79,7 @@ let
     k9s
     cilium-cli
     hubble
-  ] ++ myContainerScripts ++ [ rustToolchain nasPatchGenerator talosIso ];
+  ] ++ myContainerScripts ++ [ rustToolchain nasPatchGenerator talosPxe ];
 in
 {
   shell = pkgs.mkShell {

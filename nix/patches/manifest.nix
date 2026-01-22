@@ -1,11 +1,6 @@
 { pkgs, lib, inputs, ... }:
 let
-  rawFiles = builtins.readDir ./.;
-  yamlFiles = lib.filterAttrs 
-    (name: type: type == "regular" && lib.hasSuffix ".yaml" name) 
-    rawFiles;
-  staticPatchFiles = lib.mapAttrs (name: _: ./. + "/${name}") yamlFiles;
-
+  install = ./install.yaml;
   kubelib = inputs.nix-kube-generators.lib { inherit pkgs; };
   ciliumFile = import ./cilium.nix {
     inherit pkgs kubelib;
@@ -14,7 +9,8 @@ let
     inherit pkgs;
   };
 
-in staticPatchFiles // {
+in {
+    "install.yaml" = install;
     "cilium.yaml" = (ciliumFile);
     "ghcr.yaml" = (ghcrAuthFile);
   }

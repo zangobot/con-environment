@@ -2,6 +2,12 @@
 let
   # Import the manifest defined in Step 1
   patches = import ../patches/manifest.nix { inherit pkgs lib inputs; };
+  config = import ./talos-config.nix { 
+    inherit pkgs lib inputs; 
+    clusterName = "aivProd";
+    talosVersion = "v1.12.1";
+    vIp = "10.211.0.20";
+  };
 
   # Generate 'cp' commands for every file in the set
   installCommands = lib.concatStringsSep "\n" (lib.mapAttrsToList (name: src: ''
@@ -18,6 +24,7 @@ pkgs.writeShellScriptBin "generate-patches" ''
   mkdir -p "$TARGET_DIR"
 
   ${installCommands}
+  cp -f -r "${config}" "$TARGET_DIR/config"
 
   echo "✅ Done."
 ''
