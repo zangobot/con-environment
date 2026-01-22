@@ -319,6 +319,9 @@ data:
       - name: "yolo-l2"
         image: "ghcr.io/nbhdai/workshop-yolo-l2-notebook:latest"
         description: "YOLO Adversarial Challenge"
+        port: 5000
+        env:
+          BASE_URL: "/workshop/yolo-l2"
       - name: "email-indirect"
         image: "ghcr.io/nbhdai/workshop-email-indirect-user:latest"
         description: "Email Injection Challenge"
@@ -433,106 +436,106 @@ spec:
       nodePort: 30303
       protocol: TCP
 
-# =============================================================================
-# 6. Supporting Services (YOLO & Email Challenges)
-# =============================================================================
----
-# YOLO Challenge Server
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: challenge-server
-  namespace: workshop
-  labels:
-    app: challenge-server
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: challenge-server
-  template:
-    metadata:
-      labels:
-        app: challenge-server
-    spec:
-      containers:
-        - name: verification
-          image: ghcr.io/nbhdai/workshop-yolo-l2-verification:latest
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 5000
-          env:
-            - name: L2_THRESHOLD
-              value: "50.0"
-          resources:
-            requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: challenge-server
-  namespace: workshop
-spec:
-  selector:
-    app: challenge-server
-  ports:
-    - protocol: TCP
-      port: 5000
-      targetPort: 5000
+# # =============================================================================
+# # 6. Supporting Services (YOLO & Email Challenges)
+# # =============================================================================
+# ---
+# # YOLO Challenge Server
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: yolo-l2-verification
+#   namespace: workshop
+#   labels:
+#     app: yolo-l2-verification
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: yolo-l2-verification
+#   template:
+#     metadata:
+#       labels:
+#         app: yolo-l2-verification
+#     spec:
+#       containers:
+#         - name: verification
+#           image: ghcr.io/nbhdai/workshop-yolo-l2-verification:latest
+#           imagePullPolicy: Always
+#           ports:
+#             - containerPort: 5000
+#           env:
+#             - name: L2_THRESHOLD
+#               value: "50.0"
+#           resources:
+#             requests:
+#               memory: "128Mi"
+#               cpu: "100m"
+#             limits:
+#               memory: "512Mi"
+#               cpu: "500m"
+# ---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: yolo-l2-verification
+#   namespace: workshop
+# spec:
+#   selector:
+#     app: yolo-l2-verification
+#   ports:
+#     - protocol: TCP
+#       port: 5000
+#       targetPort: 5000
 
----
-# Email Workshop Service (LLM Bot)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: email-service
-  namespace: workshop
-  labels:
-    app: email-service
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: email-service
-  template:
-    metadata:
-      labels:
-        app: email-service
-    spec:
-      containers:
-        - name: service
-          image: ghcr.io/nbhdai/workshop-email-indirect-service:latest
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 2525
-          env:
-            - name: LISTEN_PORT
-              value: "2525"
-            - name: VLLM_URL
-              # Pointing to the AI Proxy in default namespace (assuming it exists based on policies)
-              value: "http://ai-proxy-svc.default.svc.cluster.local/v1/chat/completions"
-          resources:
-            requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: email-service
-  namespace: workshop
-spec:
-  selector:
-    app: email-service
-  ports:
-    - protocol: TCP
-      port: 2525
-      targetPort: 2525
+# ---
+# # Email Workshop Service (LLM Bot)
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: email-indirect-service
+#   namespace: workshop
+#   labels:
+#     app: email-indirect-service
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: email-indirect-service
+#   template:
+#     metadata:
+#       labels:
+#         app: email-indirect-service
+#     spec:
+#       containers:
+#         - name: service
+#           image: ghcr.io/nbhdai/workshop-email-indirect-service:latest
+#           imagePullPolicy: Always
+#           ports:
+#             - containerPort: 2525
+#           env:
+#             - name: LISTEN_PORT
+#               value: "2525"
+#             - name: VLLM_URL
+#               # Pointing to the AI Proxy in default namespace (assuming it exists based on policies)
+#               value: "http://ai-proxy-svc.default.svc.cluster.local/v1/chat/completions"
+#           resources:
+#             requests:
+#               memory: "128Mi"
+#               cpu: "100m"
+#             limits:
+#               memory: "512Mi"
+#               cpu: "500m"
+# ---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: email-indirect-service
+#   namespace: workshop
+# spec:
+#   selector:
+#     app: email-indirect-service
+#   ports:
+#     - protocol: TCP
+#       port: 2525
+#       targetPort: 2525

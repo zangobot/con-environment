@@ -73,7 +73,7 @@ docker_build(
 )
 k8s_resource(
     'yolo-notebook-dev',
-    port_forwards=['8888:8888'],
+    port_forwards=['8091:5000'],
     labels=['yolo-l2']
 )
 k8s_resource(

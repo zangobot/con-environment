@@ -13,6 +13,7 @@ pub struct Workshop {
     pub description: String,
     /// The port the container is listening on
     pub port: i32,
+    #[serde(default)]
     pub env: HashMap<String, String>,
 }
 

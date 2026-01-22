@@ -72,7 +72,7 @@ impl AxumService {
             .route("/workshop-login", get(login_handler).post(auth::handle_login))
             .route("/workshop-pending/{name}", get(pending_handler))
             .route("/workshop-at-capacity/{name}", get(capacity_handler))
-            .route("/workshop-error", get(error_handler))
+            .route("/workshop-error/{name}", get(error_handler))
             .layer(CookieManagerLayer::new());
 
         info!("Axum service router configured with routes");

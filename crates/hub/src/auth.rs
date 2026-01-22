@@ -4,6 +4,8 @@
 //! We can correct this later, if needed. Workshops at security cons
 //! are usually fun benign afairs. 
 
+use std::env;
+
 use axum::{Json, response::IntoResponse};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -119,7 +121,13 @@ pub async fn handle_login(
     cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
     cookie.set_path("/");
     cookie.set_max_age(tower_cookies::cookie::time::Duration::hours(24));
-    // cookie.set_secure(true);
+    
+    if let Ok(domain) = env::var("COOKIE_DOMAIN") {
+        if !domain.is_empty() {
+            tracing::debug!("Setting cookie domain to: {}", domain);
+            cookie.set_domain(domain);
+        }
+    }
 
     tracing::debug!("Setting cookie with max_age: 24 hours");
     cookies.add(cookie);
