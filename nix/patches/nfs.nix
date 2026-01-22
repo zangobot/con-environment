@@ -1,24 +1,25 @@
 {
   pkgs,
   kubelib,
+  server,
+  path,
 }:
 let
   # Configuration for the NFS Provisioner
   nfsProvisionerValues = {
     nfs = {
-      server = "192.168.1.20"; # Your NFS Server IP
-      path = "/exports/k8s";   # Your NFS Path
+      server = server;
+      path = path;
       mountOptions = [
-        "nfsvers=4.1"          # FORCE NFSv4
+        "nfsvers=4.1" # FORCE NFSv4
+        "nolock"
+        "tcp"
       ];
     };
 
     storageClass = {
       name = "nfs-client";
-      defaultClass = false;    # Set to true if you want this as the default for all PVCs
-      
-      # Recommended to ensure folders stick around after PVC deletion
-      # Change to "Delete" if you want the NAS folder deleted when PVC is deleted
+      defaultClass = false;
       reclaimPolicy = "Retain"; 
     };
   };
@@ -28,15 +29,14 @@ let
     repo = "https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/";
     chart = "nfs-subdir-external-provisioner";
     version = "4.0.18"; 
-    # Replace with actual hash after first run failure
-    chartHash = "sha256-0000000000000000000000000000000000000000000="; 
+    chartHash = "sha256-STkDh6TzNnouJvHYmwmm42dSN7vDfguxhOz01aOa3Dc="; 
   };
 
   # Render the Chart
   renderedNfsManifests = kubelib.buildHelmChart {
     name = "nfs-provisioner";
     chart = nfs_chart;
-    namespace = "kube-system"; # Usually runs in kube-system or storage
+    namespace = "kube-system";
     values = nfsProvisionerValues;
   };
 

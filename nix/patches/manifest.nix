@@ -1,4 +1,4 @@
-{ pkgs, lib, inputs, ... }:
+{ pkgs, lib, inputs, nfsServer, nfsPath, ... }:
 let
   kubelib = inputs.nix-kube-generators.lib { inherit pkgs; };
   ciliumFile = import ./cilium.nix {
@@ -8,16 +8,20 @@ let
     inherit pkgs;
   };
   nfsFile = import ./nfs.nix {
-    inherit pkgs;
+    inherit pkgs kubelib;
+    server = nfsServer;
+    path = nfsPath;
   };
   nvidiaFile = import ./nvidia.nix {
-    inherit pkgs;
+    inherit pkgs kubelib;
   };
 
 in {
     all = [
       (ciliumFile)
       (ghcrAuthFile)
+      (nfsFile)
+      (nvidiaFile)
       ./install.yaml
     ];
     control = [./control/schedule.yaml];

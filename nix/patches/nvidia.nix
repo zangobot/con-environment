@@ -16,8 +16,8 @@ let
   nvidia_chart = kubelib.downloadHelmChart {
     repo = "https://nvidia.github.io/k8s-device-plugin";
     chart = "nvidia-device-plugin";
-    version = "0.17.0"; 
-    chartHash = "sha256-0000000000000000000000000000000000000000000="; # Run once to get hash
+    version = "v0.18.0"; 
+    chartHash = "sha256-B8kLxp/UvWZKUw8kRoLjSuDgvL+9IHyssJi+H3wnjHY="; # Run once to get hash
   };
 
   # Render the Chart

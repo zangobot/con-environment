@@ -1,7 +1,11 @@
-{ pkgs, lib, inputs }:
+{ pkgs, lib, inputs, nfsServer, nfsPath }:
 let
   # Import the manifest defined in Step 1
-  patches = import ../patches/manifest.nix { inherit pkgs lib inputs; };
+  patches = import ../patches/manifest.nix { 
+    inherit pkgs lib inputs; 
+    nfsServer
+    nfsPath
+  };
   config = import ./talos-config.nix { 
     inherit pkgs lib inputs; 
     clusterName = "aivProd";
