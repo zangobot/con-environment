@@ -1,17 +1,16 @@
+#
+# Defines a PVC for the models that we use in vllm.
+#
 {
   pkgs,
   kubelib ? null, 
   name,
-  nfsServer,
-  nfsPath,
+  server,
+  path,
 }:
 let
-  # --- NAS Configuration ---
-  nfsConfig = {
-    size = "500Gi";               # K8s doesn't enforce this on NFS, but it's required for the spec
-  };
+  size = "500Gi";
 
-  # Define the raw Kubernetes manifests
   manifests = ''
     apiVersion: v1
     kind: PersistentVolume
@@ -19,7 +18,7 @@ let
       name: ${name}-pv
     spec:
       capacity:
-        storage: ${nfsConfig.size}
+        storage: ${size}
       volumeMode: Filesystem
       accessModes:
         - ReadOnlyMany          # Safe for vLLM scaling
@@ -28,9 +27,11 @@ let
       mountOptions:
         - nfsvers=4.1
         - noatime               # Improves read performance
+        - nolock
+        - tcp
       nfs:
-        server: ${nfsServer}
-        path: ${nfsPath}
+        server: ${server}
+        path: ${path}
     ---
     apiVersion: v1
     kind: PersistentVolumeClaim
@@ -44,7 +45,7 @@ let
       resources:
         requests:
           storage: ${nfsConfig.size}
-      volumeName: ${name}-pv
+      volumeName: ${name}
   '';
 
 in

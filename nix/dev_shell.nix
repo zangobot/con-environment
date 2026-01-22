@@ -17,6 +17,9 @@ let
   nasPatchGenerator = import ./nas/patches.nix { 
     inherit pkgs inputs; 
     lib = pkgs.lib;
+    nfsServer = "10.211.0.10";
+    mainPath = "/mnt/data/dynamic-pvc";
+    vllmPath = "/mnt/data/models";
   };
 
   talosPxe = import ./nas/talos-image.nix { 

@@ -12,6 +12,7 @@ let
       path = path;
       mountOptions = [
         "nfsvers=4.1" # FORCE NFSv4
+        "noatime"
         "nolock"
         "tcp"
       ];

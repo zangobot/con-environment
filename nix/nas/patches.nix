@@ -1,10 +1,11 @@
-{ pkgs, lib, inputs, nfsServer, nfsPath }:
+{ pkgs, lib, inputs, nfsServer, mainPath, vllmPath }:
 let
   # Import the manifest defined in Step 1
   patches = import ../patches/manifest.nix { 
     inherit pkgs lib inputs; 
-    nfsServer
-    nfsPath
+    nfsServer = nfsServer;
+    mainPath = mainPath;
+    vllmPath = vllmPath;
   };
   config = import ./talos-config.nix { 
     inherit pkgs lib inputs; 
