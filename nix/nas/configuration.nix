@@ -11,16 +11,6 @@
       initrd tftp://${ip}/initrd
       boot
     '';
-    clusterConfig = import ./talos-config.nix { 
-      inherit pkgs inputs lib;
-      talosConfig = "talosConfig";
-      clusterName = "aivProd";
-      talosVersion = "v1.12.1";
-      vIp = controlIp;
-      nfsServer = ip;
-      mainPath = "/mnt/data/dynamic-pvc";
-      vllmPath = "/mnt/data/model-store";
-    };
     talosImages = import ./talos-image.nix { 
       inherit pkgs; 
       version = "v1.12.1";

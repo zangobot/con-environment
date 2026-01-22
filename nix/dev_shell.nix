@@ -14,12 +14,15 @@ let
     inherit pkgs; 
   };
 
-  nasPatchGenerator = import ./nas/patches.nix { 
+  talosConfigs = import ./talos-config.nix { 
     inherit pkgs inputs; 
     lib = pkgs.lib;
-    nfsServer = "10.211.0.10";
+    clusterName = "aivProd";
+    talosVersion = "v1.12.1";
+    vIp = controlIp;
+    nfsServer = ip;
     mainPath = "/mnt/data/dynamic-pvc";
-    vllmPath = "/mnt/data/models";
+    vllmPath = "/mnt/data/model-store";
   };
   
   talosPxe = import ./nas/talos-image.nix { 
@@ -113,6 +116,8 @@ in
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
           fi
         fi
+        # Todo: move this elsewhere
+        export TALOS_SECRETS=$(sops -d ./deployment/secrets.yaml)
 
         export TALOS_VERSION="v1.11.0"
         export KUBECONFIG="$DATA_DIR/talos/kubeconfig"

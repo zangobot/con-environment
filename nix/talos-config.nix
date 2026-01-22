@@ -7,29 +7,35 @@ let
   controlPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") patchesSet.control;
   workerPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") patchesSet.worker;
 in
-pkgs.runCommand "talos-config" {
-  nativeBuildInputs = [ pkgs.talosctl ];
-} ''
-  # Create the output directory
-  mkdir -p $out
+pkgs.writeShellScript "generate-talos-config.sh" ''
+  set -e
+  SECRETS_FILE=$1
+  OUTPUT_DIR=$2
+
+  if [ -z "$SECRETS_FILE" ] || [ -z "$OUTPUT_DIR" ]; then
+    echo "Usage: $0 <path-to-secrets> <output-dir>"
+    exit 1
+  fi
+
+  # Ensure directory exists
+  mkdir -p "$OUTPUT_DIR"
+  cd "$OUTPUT_DIR"
 
   echo "🚀 Generating Talos Configuration for ${clusterName}..."
-  echo "Applying patches:"
-  echo "${patchFlags}"
-
-  # Generate the configuration
-  # We use the flags to apply patches immediately during generation
-  talosctl gen config \
+  
+  # We reference ${pkgs.talosctl} directly so it's available on the NAS
+  ${pkgs.talosctl}/bin/talosctl gen config \
     "${clusterName}" \
     "${clusterEndpoint}" \
-    --install-disk "" \
-    --output "$out" \
+    --install-disk "/dev/sda" \
     --talos-version "${talosVersion}" \
     ${patchFlags} \
     ${controlPatchFlags} \
     ${workerPatchFlags} \
-    
+    --with-secrets "$SECRETS_FILE" \
+    --force
 
-  echo "✅ Configuration generated in $out"
+  # Fix permissions so your admin user can read them (optional)
+  chmod 644 controlplane.yaml worker.yaml talosconfig
+  echo "✅ Configuration generated in $OUTPUT_DIR"
 ''
-  # --with-secrets ${secrets}
