@@ -21,9 +21,7 @@ let
     inherit pkgs kubelib;
     output = "${patchDir}/ghcr.yaml";
   };
-
-  
-  generatePatches = pkgs.writeShellScriptBin "generate-patches" ''
+in pkgs.writeShellScriptBin "generate-patches" ''
     set -euo pipefail
     echo "🚀 Starting Patch Generation..."
     echo "   Target: ${patchDir}"
@@ -36,10 +34,4 @@ let
     ${copyStaticCmds}
 
     echo "✅ All patches generated successfully."
-  '';
-
-in
-{
-  # Expose the script to the system
-  environment.systemPackages = [ generatePatches ];
-}
+  ''

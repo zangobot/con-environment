@@ -9,12 +9,15 @@
       initrd tftp://10.211.0.10/initrd
       boot
     '';
+    patchGenerator = import ../patches/generator.nix { 
+      inherit pkgs inputs lib;
+      patchDir = "/mnt/data/patches";
+    };
   in
 {
   imports =
     [
       ./hardware-configuration.nix
-      ./patches.nix
     ];
 
   # ==========================================
@@ -128,7 +131,7 @@
     hubble
     nmap
     tcpdump
-  ];
+  ] ++ [ patchGenerator ];
   # ==========================================
   # 8. Main DHCP & DNS (Pure Dnsmasq PXE)
   # ==========================================

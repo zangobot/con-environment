@@ -17,7 +17,7 @@ let
   nasPatchGenerator = import ./nas/patches.nix { 
     inherit pkgs inputs; 
     lib = pkgs.lib;
-    patchDir = ./deployment;
+    patchDir = ../deployment;
   };
 
   # --- DEFINE YOUR CONFIG ---
