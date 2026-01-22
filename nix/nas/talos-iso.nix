@@ -18,6 +18,7 @@
   # --- Extensions ---
   # Default to the requested Intel + Nvidia stack
   systemExtensions ? [
+    "siderolabs/amd-ucode"
     "siderolabs/intel-ucode" 
     "siderolabs/nvidia-open-gpu-kernel-modules"
     "siderolabs/nvidia-container-toolkit" 

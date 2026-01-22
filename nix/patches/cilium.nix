@@ -106,7 +106,7 @@ let
     name = "cilium";
     chart = cilium_chart;
     namespace = "kube-system";
-    values = ciliumValues; # <-- Use the new attrset here
+    values = ciliumValues;
     includeCRDs = true;
   };
 

@@ -7,8 +7,17 @@ let
 
   rustToolchain = fenix.packages.${system}.stable.toolchain;
 
+  isDarwin = pkgs.stdenv.isDarwin;
+  isLinux = pkgs.stdenv.isLinux;
+
   mkContainerScripts = import ./container_scripts.nix { 
     inherit pkgs; 
+  };
+
+  nasPatchGenerator = import ./nas/patches.nix { 
+    inherit pkgs inputs; 
+    lib = pkgs.lib;
+    patchDir = ./deployment;
   };
 
   # --- DEFINE YOUR CONFIG ---
@@ -56,19 +65,10 @@ let
     k9s
     cilium-cli
     hubble
-  ] ++ myContainerScripts ++ [ rustToolchain ];
+  ] ++ myContainerScripts ++ [ rustToolchain nasPatchGenerator ];
 in
 {
-  shell = 
-    let
-    
-    # Environment variables that need to be loaded from a dotfile.
-    dotenv = ''
-
-    '';
-    
-    in
-    pkgs.mkShell {
+  shell = pkgs.mkShell {
       name = "aiv-k8-dev";
 
       # The packages available in the development environment
@@ -76,6 +76,11 @@ in
 
       # Setup hook that prepares environment and config files
       shellHook = ''
+        ${if isDarwin then ''
+          # macOS-specific configuration
+          unset DEVELOPER_DIR
+        '' else ""}
+
         # Set up environment variables
         export PROJECT_ROOT=$PWD
         export DATA_DIR="$PROJECT_ROOT/.data"

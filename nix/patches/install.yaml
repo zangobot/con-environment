@@ -1,0 +1,11 @@
+machine:
+  install:
+    wipe: true
+    diskSelector:
+      size: 512110190592
+  kernel:
+    modules:
+      - name: nvidia
+      - name: nvidia_uvm
+      - name: nvidia_drm
+      - name: nvidia_modeset

@@ -14,6 +14,7 @@
   imports =
     [
       ./hardware-configuration.nix
+      ./patches.nix
     ];
 
   # ==========================================
@@ -60,7 +61,6 @@
     enable = true;
     trustedInterfaces = [ "tailscale0" ];
     
-    # FIX: You must open ports for services running on the Physical LAN (enp1s0)
     allowedTCPPorts = [ 
       22   # Local ssh
       53   # DNS (dnsmasq)
@@ -79,7 +79,7 @@
   
   services.openssh = {
     enable = true;
-    openFirewall = false; # Keeps SSH closed on LAN (Tailscale only)
+    openFirewall = false;
     settings = {
       PasswordAuthentication = false;
       PermitRootLogin = "no";
@@ -92,7 +92,6 @@
   
   services.nfs.server = {
     enable = true;
-    # FIX: Updated subnet to match your actual network (10.211.0.0/24)
     exports = ''
       /mnt/data 10.211.0.0/24(rw,nohide,insecure,no_subtree_check,no_root_squash)
     '';
@@ -195,9 +194,6 @@
   # ==========================================
   # 9. PXE Files Setup (The "Plumbing")
   # ==========================================
-  
-  # This creates the TFTP directory and symlinks your build files into it
-  # so Dnsmasq can serve them.
   systemd.tmpfiles.rules = [
     "d /var/lib/tftpboot 0755 root root -"
     "L+ /var/lib/tftpboot/ipxe.efi - - - - ${pkgs.ipxe}/ipxe.efi"
