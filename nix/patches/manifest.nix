@@ -1,6 +1,5 @@
 { pkgs, lib, inputs, ... }:
 let
-
   rawFiles = builtins.readDir ./.;
   yamlFiles = lib.filterAttrs 
     (name: type: type == "regular" && lib.hasSuffix ".yaml" name) 

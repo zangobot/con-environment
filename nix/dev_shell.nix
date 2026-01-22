@@ -21,6 +21,16 @@ let
 
   talosIso = import ./nas/talos-iso.nix { 
     inherit pkgs; 
+  } {
+    version = "v1.12.1";
+    diskImage = "pxe";
+    systemExtensions = [
+      "siderolabs/amd-ucode"
+      "siderolabs/intel-ucode"
+      "siderolabs/nonfree-kmod-nvidia-lts"
+      "siderolabs/nvidia-container-toolkit-lts"
+    ];
+    sha256 = "sha256-wb6nJF3vETvURTtmXGQzHTos1V/fUBmVHO/AZlF2WdE="; 
   };
 
   # --- DEFINE YOUR CONFIG ---
@@ -68,7 +78,7 @@ let
     k9s
     cilium-cli
     hubble
-  ] ++ myContainerScripts ++ [ rustToolchain nasPatchGenerator ];
+  ] ++ myContainerScripts ++ [ rustToolchain nasPatchGenerator talosIso ];
 in
 {
   shell = pkgs.mkShell {
