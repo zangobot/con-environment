@@ -77,7 +77,11 @@ k8s_resource(
     labels=['yolo-l2']
 )
 k8s_resource(
-    'challenge-server',
+    'workshop-yolo-l2-target-verification',
+    labels=['yolo-l2']
+)
+k8s_resource(
+    'workshop-yolo-l2-verification',
     labels=['yolo-l2']
 )
 

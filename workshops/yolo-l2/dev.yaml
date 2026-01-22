@@ -11,7 +11,7 @@ spec:
       image: workshop-yolo-l2-notebook
       imagePullPolicy: Always
       ports:
-        - containerPort: 8888
+        - containerPort: 5000
       resources:
         limits:
           memory: "2Gi"
@@ -19,6 +19,11 @@ spec:
         requests:
           memory: "1Gi"
           cpu: "2"
+      env:
+        - name: VERIFICATION_SERVER_UNTARGETED
+          value: http://workshop-yolo-l2-verification:5000/verify
+        - name: VERIFICATION_SERVER_TARGETED
+          value: http://workshop-yolo-l2-target-verification:5000/verify
 ---
 apiVersion: v1
 kind: Service
@@ -30,26 +35,26 @@ spec:
   selector:
     app: yolo-notebook
   ports:
-    - port: 8888
-      targetPort: 8888
+    - port: 5000
+      targetPort: 5000
       nodePort: 30888
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: challenge-server
+  name: workshop-yolo-l2-verification
   namespace: default
   labels:
-    app: challenge-server
+    app: workshop-yolo-l2-verification
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: challenge-server
+      app: workshop-yolo-l2-verification
   template:
     metadata:
       labels:
-        app: challenge-server
+        app: workshop-yolo-l2-verification
     spec:
       containers:
         - name: verification
@@ -71,11 +76,60 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: challenge-server
+  name: workshop-yolo-l2-verification
   namespace: default
 spec:
   selector:
-    app: challenge-server
+    app: workshop-yolo-l2-verification
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workshop-yolo-l2-target-verification
+  namespace: default
+  labels:
+    app: workshop-yolo-l2-target-verification
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workshop-yolo-l2-target-verification
+  template:
+    metadata:
+      labels:
+        app: workshop-yolo-l2-target-verification
+    spec:
+      containers:
+        - name: verification
+          image: workshop-yolo-l2-verification
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: L2_THRESHOLD
+              value: "50.0"
+            - name: TARGET_CLASS
+              value: gibbon
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workshop-yolo-l2-target-verification
+  namespace: default
+spec:
+  selector:
+    app: workshop-yolo-l2-target-verification
   ports:
     - protocol: TCP
       port: 5000

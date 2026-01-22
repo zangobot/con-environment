@@ -10,21 +10,31 @@ app = Flask(__name__)
 FLAG = os.environ.get("FLAG", "flag{ChristianSzegedy_Is_Proud}")
 SOURCE_IMAGE_PATH = os.environ.get("SOURCE_IMAGE_PATH", "nika.png")
 L2_THRESHOLD = float(os.environ.get("L2_THRESHOLD", 50.0))
-ORIGINAL_CLASS_ID = int(os.environ.get("ORIGINAL_CLASS_ID", 0))
 
 # OPTIONAL: Set this to force a targeted attack (e.g. make the model see a toaster)
 # If not set, the default behavior is just to "break" the classification (untargeted).
 raw_target = os.environ.get("TARGET_CLASS")
-TARGET_CLASS = int(raw_target) if raw_target is not None else None
+TARGET_CLASS = raw_target if raw_target is not None else None
 
 print("Loading Model and Reference Image...")
 model = YOLO("yolo11n-cls.pt") 
+
+def top_class(results):
+    r = results[0]
+    top_idx = int(r.probs.top1)
+    conf = float(r.probs.top1conf)
+    class_name = r.names[top_idx]
+    return (class_name, conf)
 
 try:
     ref_img = Image.open(SOURCE_IMAGE_PATH).convert("RGB")
     REF_IMG_ARRAY = np.array(ref_img, dtype=np.float32)
     REF_SHAPE = REF_IMG_ARRAY.shape
     print(f"Reference Loaded: {REF_SHAPE}")
+    results = model(ref_img)
+    r = results[0]
+    ORIGINAL_CLASS_ID = int(r.probs.top1)
+    ORIGINAL_CLASS =class_name = r.names[ORIGINAL_CLASS_ID]
     if TARGET_CLASS is not None:
         print(f"⚠️  MODE: Targeted Attack -> Must reach Class ID {TARGET_CLASS}")
     else:
@@ -33,6 +43,8 @@ try:
 except Exception as e:
     print(f"CRITICAL ERROR: Could not load source image {SOURCE_IMAGE_PATH}: {e}")
     exit(1)
+
+
 
 print("Ready.")
 
@@ -92,7 +104,7 @@ def verify():
             if top_class_id != ORIGINAL_CLASS_ID:
                 attack_success = True
             else:
-                fail_message = f"Object (Class {ORIGINAL_CLASS_ID}) still detected."
+                fail_message = f"Object (Class {ORIGINAL_CLASS}) still detected."
 
         # 6. Return Response
         if attack_success:
