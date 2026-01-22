@@ -1,6 +1,5 @@
 {
   pkgs,
-  output,
   kubelib,
 }:
 let
@@ -111,11 +110,7 @@ let
   };
 
 in
-pkgs.writeShellApplication {
-  name = "con-generate-cilium-patch";
-  runtimeInputs = with pkgs; [ coreutils gnused ];
-
-  text = ''
+pkgs.runCommand "cilium.yaml" ''
     set -euo pipefail
 
     mkdir -p "$(dirname "${output}")"
@@ -137,8 +132,5 @@ PATCH_START
     
       sed 's/^/        /' "${renderedCiliumManifests}"
       
-    ) > "${output}" # Single redirection to the output file
-    
-    echo "✓ Cilium patch generated: ${output}" >&2
-  '';
-}
+    ) > "$out"
+''

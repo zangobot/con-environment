@@ -10,44 +10,29 @@ let
   # Import con_shell patch generators
   cilium_patch = import ../patches/cilium.nix {
     inherit pkgs;
-    output = config.dataDir + "/cilium.yaml";
     kubelib = config.kubelib;
   };
 
   ghcr_patch = import ../patches/ghcr.nix {
     inherit pkgs;
-    output = config.dataDir + "/ghcr.yaml";
   };
 
   # Script to generate all dev patches
   generateDevPatchesScript = pkgs.writeShellApplication {
     name = "generate-dev-patches";
-    runtimeInputs = with pkgs; [ 
-      coreutils 
-      kubernetes-helm
-      gnused
-    ];
-    
     text = ''
       set -euo pipefail
       
       echo "🔧 Generating development patches..."
       mkdir -p "${config.dataDir}"
-      ${lib.getExe cilium_patch}
-      ${lib.getExe ghcr_patch}
+      cp -f "${cilium_patch}" "${config.dataDir}/cilium.yaml"
+      cp -f "${ghcr_patch}" "${config.dataDir}/ghcr.yaml"
     '';
   };
 
 in
 {
   options = {
-    ciliumValuesFile = mkOption {
-      type = types.path;
-      default = ./setup/k8/cilium-values.yaml;
-      description = "Path to Cilium values file. If null, uses default values.";
-      example = ./setup/k8/cilium-values.yaml;
-    };
-
     kubelib = mkOption {
       type = types.attrs;
       description = "Kubelib to generate the chart.";

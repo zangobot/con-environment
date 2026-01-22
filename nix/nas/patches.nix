@@ -1,37 +1,23 @@
-{ pkgs, lib, inputs, patchDir, ... }:
+{ pkgs, lib, inputs }:
 let
-  # 1. Configuration Constants
-  patchesSrc = ../patches;
-  kubelib = inputs.nix-kube-generators.lib { inherit pkgs; };
+  # Import the manifest defined in Step 1
+  patches = import ./manifest.nix { inherit pkgs lib inputs; };
 
-  staticPatchFiles = lib.filterAttrs 
-    (name: type: type == "regular" && lib.hasSuffix ".yaml" name) 
-    (builtins.readDir patchesSrc);
+  # Generate 'cp' commands for every file in the set
+  installCommands = lib.concatStringsSep "\n" (lib.mapAttrsToList (name: src: ''
+    echo "📄 Installing ${name}..."
+    cp -f "${src}" "$TARGET_DIR/${name}"
+    chmod 600 "$TARGET_DIR/${name}"
+  '') patches);
+in
+pkgs.writeShellScriptBin "generate-patches" ''
+  set -euo pipefail
+  TARGET_DIR="''${1}" # Default to ./patches, allow override
+  
+  echo "🚀 Generating patches to: $TARGET_DIR"
+  mkdir -p "$TARGET_DIR"
 
-  copyStaticCmds = lib.concatStringsSep "\n" (lib.mapAttrsToList (name: _: ''
-    echo "📄 Copying static patch: ${name}"
-    cp "${patchesSrc}/${name}" "${patchDir}/${name}"
-  '') staticPatchFiles);
+  ${installCommands}
 
-  ciliumGenerator = import ../patches/cilium.nix {
-    inherit pkgs kubelib;
-    output = "${patchDir}/cilium.yaml";
-  };
-  ghcr-auth = import ../patches/ghcr.nix {
-    inherit pkgs kubelib;
-    output = "${patchDir}/ghcr.yaml";
-  };
-in pkgs.writeShellScriptBin "generate-patches" ''
-    set -euo pipefail
-    echo "🚀 Starting Patch Generation..."
-    echo "   Target: ${patchDir}"
-    
-    mkdir -p "${patchDir}"
-
-    ${lib.getExe ciliumGenerator}
-    ${lib.getExe ghcr-auth}
-
-    ${copyStaticCmds}
-
-    echo "✅ All patches generated successfully."
-  ''
+  echo "✅ Done."
+''

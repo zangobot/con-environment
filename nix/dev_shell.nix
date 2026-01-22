@@ -14,10 +14,9 @@ let
     inherit pkgs; 
   };
 
-  nasPatchGenerator = import ./nas/patches.nix { 
+  patchGenerator = import ./nas/patches.nix { 
     inherit pkgs inputs; 
     lib = pkgs.lib;
-    patchDir = ../deployment;
   };
 
   # --- DEFINE YOUR CONFIG ---
