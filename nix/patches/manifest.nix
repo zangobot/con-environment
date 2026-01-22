@@ -12,11 +12,11 @@ let
     server = nfsServer;
     path = mainPath;
   };
-  modelPvcFile = import ./nfs.nix {
+  modelPvcFile = import ./model-store.nix {
     inherit pkgs kubelib;
     server = nfsServer;
-    path = mainPath;
-    name = "vllmPath";
+    path = vllmPath;
+    name = "model-store";
   };
   nvidiaFile = import ./nvidia.nix {
     inherit pkgs kubelib;

@@ -51,7 +51,6 @@ cluster:
   inlineManifests:
     - name: nfs-provisioner
       contents: |
-        ---
 PATCH_START
       sed 's/^/        /' "${renderedNfsManifests}"
       

@@ -1,8 +1,8 @@
-{ pkgs, lib, inputs, clusterName, talosVersion, vIp, ... }:
+{ pkgs, lib, inputs, clusterName, talosVersion, vIp, nfsServer, mainPath, vllmPath, ... }:
 
 let
   clusterEndpoint = "https://${vIp}:6443";
-  patchesSet = import ../patches/manifest.nix { inherit pkgs lib inputs; };
+  patchesSet = import ../patches/manifest.nix { inherit pkgs lib inputs nfsServer mainPath vllmPath; };
   patchFlags = lib.concatMapStringsSep " " (p: "--config-patch @${p}") patchesSet.all;
   controlPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") patchesSet.control;
   workerPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") patchesSet.worker;

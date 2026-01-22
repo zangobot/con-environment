@@ -38,7 +38,6 @@ cluster:
   inlineManifests:
     - name: nvidia-device-plugin
       contents: |
-        ---
 PATCH_START
     
       sed 's/^/        /' "${renderedNvidiaManifests}"

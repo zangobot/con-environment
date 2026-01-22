@@ -125,7 +125,6 @@ cluster:
   inlineManifests:
     - name: cilium
       contents: |
-        ---
 PATCH_START
     
       sed 's/^/        /' "${renderedCiliumManifests}"

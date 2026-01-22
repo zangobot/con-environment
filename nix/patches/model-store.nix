@@ -11,7 +11,7 @@
 let
   size = "500Gi";
 
-  manifests = ''
+  modelStoreManifests = ''
     apiVersion: v1
     kind: PersistentVolume
     metadata:
@@ -44,10 +44,24 @@ let
       storageClassName: manual-models
       resources:
         requests:
-          storage: ${nfsConfig.size}
+          storage: ${size}
       volumeName: ${name}
   '';
 
 in
 # This writes the string directly to the output file without any extra formatting/indentation
-pkgs.writeText "${name}-pvc.yaml" manifests
+pkgs.runCommand "model-store.yaml" {} ''
+    set -euo pipefail
+    
+    (
+      cat << 'PATCH_START'
+cluster:
+  inlineManifests:
+    - name: model-store
+      contents: |
+        ---
+PATCH_START
+      echo "${modelStoreManifests}" | sed 's/^/        /'
+      
+    ) > "$out"
+''
