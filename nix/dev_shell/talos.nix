@@ -1,4 +1,3 @@
-# Talos Service Module for process-compose
 { pkgs, lib, config, name, ... }:
 let
   inherit (lib) types mkOption mkPackageOption mkIf;

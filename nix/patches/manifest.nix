@@ -1,19 +1,21 @@
 { pkgs, lib, inputs, ... }:
 let
-  # 1. Configuration Constants
-  kubelib = inputs.nix-kube-generators.lib { inherit pkgs; };
 
-  staticPatchFiles = lib.filterAttrs 
+  rawFiles = builtins.readDir ./.;
+  yamlFiles = lib.filterAttrs 
     (name: type: type == "regular" && lib.hasSuffix ".yaml" name) 
-    (builtins.readDir ./.);
+    rawFiles;
+  staticPatchFiles = lib.mapAttrs (name: _: ./. + "/${name}") yamlFiles;
 
-  ciliumFile = import .//cilium.nix {
+  kubelib = inputs.nix-kube-generators.lib { inherit pkgs; };
+  ciliumFile = import ./cilium.nix {
     inherit pkgs kubelib;
   };
-  ghcrAuthFile = import .//ghcr.nix {
+  ghcrAuthFile = import ./ghcr.nix {
     inherit pkgs;
   };
+
 in staticPatchFiles // {
-    "cilium.yaml" = ciliumFile;
-    "ghcr.yaml" = ghcrAuthFile;
+    "cilium.yaml" = (ciliumFile);
+    "ghcr.yaml" = (ghcrAuthFile);
   }

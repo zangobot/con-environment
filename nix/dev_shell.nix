@@ -14,9 +14,13 @@ let
     inherit pkgs; 
   };
 
-  patchGenerator = import ./nas/patches.nix { 
+  nasPatchGenerator = import ./nas/patches.nix { 
     inherit pkgs inputs; 
     lib = pkgs.lib;
+  };
+
+  talosIso = import ./nas/talos-iso.nix { 
+    inherit pkgs; 
   };
 
   # --- DEFINE YOUR CONFIG ---

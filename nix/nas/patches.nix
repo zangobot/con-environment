@@ -1,7 +1,7 @@
 { pkgs, lib, inputs }:
 let
   # Import the manifest defined in Step 1
-  patches = import ./manifest.nix { inherit pkgs lib inputs; };
+  patches = import ../patches/manifest.nix { inherit pkgs lib inputs; };
 
   # Generate 'cp' commands for every file in the set
   installCommands = lib.concatStringsSep "\n" (lib.mapAttrsToList (name: src: ''

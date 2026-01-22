@@ -110,10 +110,8 @@ let
   };
 
 in
-pkgs.runCommand "cilium.yaml" ''
+pkgs.runCommand "cilium.yaml" {} ''
     set -euo pipefail
-
-    mkdir -p "$(dirname "${output}")"
     
     # Use a subshell to group all output and redirect it once
     (
