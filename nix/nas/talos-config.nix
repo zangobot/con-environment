@@ -3,8 +3,14 @@
 let
   clusterEndpoint = "https://${vIp}:6443";
   patchesSet = import ../patches/manifest.nix { inherit pkgs lib inputs; };
-  patchList = lib.attrValues patchesSet;
-  patchFlags = lib.concatMapStringsSep " " (p: "--config-patch @${p}") patchList;
+  patchFlags = lib.concatMapStringsSep " " (p: "--config-patch @${p}") [
+    patchesSet.cilium
+    patchesSet.ghcr
+    patchesSet.install
+  ];
+  controlPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") [
+    patchesSet.control-schedule
+  ];
 in
 pkgs.runCommand "talos-config" {
   nativeBuildInputs = [ pkgs.talosctl ];
@@ -24,7 +30,8 @@ pkgs.runCommand "talos-config" {
     --install-disk "" \
     --output "$out" \
     --talos-version "${talosVersion}" \
-    ${patchFlags}
+    ${patchFlags} \
+    ${controlPatchFlags}
 
   echo "✅ Configuration generated in $out"
 ''

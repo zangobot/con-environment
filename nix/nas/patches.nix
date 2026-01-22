@@ -9,12 +9,6 @@ let
     vIp = "10.211.0.20";
   };
 
-  # Generate 'cp' commands for every file in the set
-  installCommands = lib.concatStringsSep "\n" (lib.mapAttrsToList (name: src: ''
-    echo "📄 Installing ${name}..."
-    cp -f "${src}" "$TARGET_DIR/${name}"
-    chmod 600 "$TARGET_DIR/${name}"
-  '') patches);
 in
 pkgs.writeShellScriptBin "generate-patches" ''
   set -euo pipefail
@@ -23,7 +17,10 @@ pkgs.writeShellScriptBin "generate-patches" ''
   echo "🚀 Generating patches to: $TARGET_DIR"
   mkdir -p "$TARGET_DIR"
 
-  ${installCommands}
+  cp -f "${patches.cilium}" "$TARGET_DIR/cilium.yaml"
+  cp -f "${patches.control-schedule}" "$TARGET_DIR/control-schedule.yaml"
+  cp -f "${patches.ghcr}" "$TARGET_DIR/ghcr.yaml"
+  cp -f "${patches.install}" "$TARGET_DIR/install.yaml"
   cp -f -r "${config}" "$TARGET_DIR/config"
 
   echo "✅ Done."
