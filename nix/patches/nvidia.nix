@@ -10,6 +10,22 @@ let
     gfd = {
       enabled = true; # GPU Feature Discovery (labels nodes with GPU model/memory)
     };
+    affinity = {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [
+            {
+              matchExpressions = [
+                {
+                  key = "node-role.kubernetes.io/control-plane";
+                  operator = "DoesNotExist";
+                }
+              ];
+            }
+          ];
+        };
+      };
+    };
   };
 
   # Download the NVIDIA Device Plugin Chart

@@ -39,6 +39,8 @@ let
     ];
     sha256 = "sha256-ctKKY9stHhMosgyKCDWQVMzOxv0wPnqsRitZlkhxYpY=";
 
+    # sha256 = pkgs.lib.fakeHash;
+
     diskImage = "pxe-assets";
   };
 

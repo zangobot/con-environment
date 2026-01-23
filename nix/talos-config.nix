@@ -27,6 +27,7 @@ pkgs.writeShellScriptBin "generate-talos-configs" ''
     "${clusterEndpoint}" \
     --install-disk "" \
     --talos-version "${talosVersion}" \
+    --endpoints control \
     ${patchFlags} \
     ${controlPatchFlags} \
     ${workerPatchFlags} \

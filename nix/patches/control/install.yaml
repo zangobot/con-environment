@@ -5,5 +5,4 @@ machine:
     diskSelector:
       size: 512110190592
 cluster:
-  controlPlane:
-    endpoint: https://control:6443
+  allowSchedulingOnControlPlanes: true

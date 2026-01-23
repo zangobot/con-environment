@@ -29,9 +29,11 @@ in {
       (mainPcvFile)
       (modelPvcFile)
       (nvidiaHelmChart)
-      ./install.yaml
+      #./install.yaml
     ];
-    control = [./control/schedule.yaml];
+    control = [
+      ./control/schedule.yaml
+    ];
     worker = [
       ./worker/nvidia_kernel.yaml
     ];

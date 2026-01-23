@@ -58,19 +58,21 @@
     inspectorBuild = inputs.self.nixosConfigurations.inspector.config.system.build;
 
     talosImages = import ./talos-image.nix { 
-      inherit pkgs; } {
+      inherit pkgs; 
+    } {
       version = "v1.12.1";
-        platform = "metal";
-        arch = "amd64";
-        systemExtensions = [
-          "siderolabs/amd-ucode"
-          "siderolabs/intel-ucode"
-          "siderolabs/nvidia-container-toolkit-lts"
-          "siderolabs/nvidia-open-gpu-kernel-modules-lts"
-        ];
-        sha256 = "sha256-ctKKY9stHhMosgyKCDWQVMzOxv0wPnqsRitZlkhxYpY=";
+      platform = "metal";
+      arch = "amd64";
+      systemExtensions = [
+        "siderolabs/amd-ucode"
+        "siderolabs/intel-ucode"
+        "siderolabs/nvidia-container-toolkit-lts"
+        "siderolabs/nvidia-open-gpu-kernel-modules-lts"
+      ];
+      sha256 = "sha256-ctKKY9stHhMosgyKCDWQVMzOxv0wPnqsRitZlkhxYpY=";
+      # sha256 = pkgs.lib.fakeHash;
 
-        diskImage = "pxe-assets";
+      diskImage = "pxe-assets";
     };
   in
 {
@@ -269,27 +271,28 @@
   # ==========================================
   # 9. PXE Files Setup (The "Plumbing")
   # ==========================================
-  systemd.tmpfiles.rules = import ./pxe-boot.nix {
-    inherit pkgs ip;
-    message    = "Starting Talos Boot...";
-    kernelPath = "${talosImages}/vmlinuz";  # Talos outputs 'vmlinuz'
-    initrdPath = "${talosImages}/initrd";
-    cmdline    = "talos.platform=metal console=tty0 init_on_alloc=1 slab_nomerge pti=on consoleblank=0 nvme_core.io_timeout=4294967295 printk.devkmsg=on selinux=1 module.sig_enforce=1";
-  } ++ [
-    # From Section 2 (ZFS) permit everyone
-    "z /mnt/data 0777 nobody nogroup -"
-  ];
-
   # systemd.tmpfiles.rules = import ./pxe-boot.nix {
   #   inherit pkgs ip;
-  #   message    = "Starting Inspector Boot...";
-  #   kernelPath = "${inspectorBuild.kernel}/bzImage"; # NixOS outputs 'bzImage'
-  #   initrdPath = "${inspectorBuild.netbootRamdisk}/initrd";
-  #   cmdline    = "init=${inspectorBuild.toplevel}/init loglevel=4";
+  #   message    = "Starting Talos Boot...";
+  #   kernelPath = "${talosImages}/vmlinuz";  # Talos outputs 'vmlinuz'
+  #   initrdPath = "${talosImages}/initrd";
+  #   cmdline    = "talos.platform=metal console=tty0 init_on_alloc=1 slab_nomerge pti=on consoleblank=0 nvme_core.io_timeout=4294967295 printk.devkmsg=on selinux=1 module.sig_enforce=1";
   # } ++ [
   #   # From Section 2 (ZFS) permit everyone
   #   "z /mnt/data 0777 nobody nogroup -"
   # ];
+
+  systemd.tmpfiles.rules = import ./pxe-boot.nix {
+    inherit pkgs;
+    ip = ip;
+    message    = "Starting Inspector Boot...";
+    kernelPath = "${inspectorBuild.kernel}/bzImage"; # NixOS outputs 'bzImage'
+    initrdPath = "${inspectorBuild.netbootRamdisk}/initrd";
+    cmdline    = "init=${inspectorBuild.toplevel}/init loglevel=4";
+  } ++ [
+    # From Section 2 (ZFS) permit everyone
+    "z /mnt/data 0777 nobody nogroup -"
+  ];
 
   system.stateVersion = "25.11";
 }
