@@ -6,4 +6,4 @@ machine:
       size: 512110190592
 cluster:
   controlPlane:
-    endpoint: https://10.211.0.20:6443
+    endpoint: https://control:6443

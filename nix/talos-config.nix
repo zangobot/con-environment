@@ -5,7 +5,7 @@ let
   patchesSet = import ./patches/manifest.nix { inherit pkgs lib inputs nfsServer mainPath vllmPath; };
   patchFlags = lib.concatMapStringsSep " " (p: "--config-patch @${p}") patchesSet.all;
   controlPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") patchesSet.control;
-  workerPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") patchesSet.worker;
+  workerPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-worker @${p}") patchesSet.worker;
 in
 pkgs.writeShellScriptBin "generate-talos-configs" ''
   set -e
