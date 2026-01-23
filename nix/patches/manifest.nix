@@ -29,12 +29,12 @@ in {
       (mainPcvFile)
       (modelPvcFile)
       (nvidiaHelmChart)
-      #./install.yaml
+      ./control.yaml
     ];
     control = [
-      ./control/schedule.yaml
+      ./control/install.yaml
     ];
     worker = [
-      ./worker/nvidia_kernel.yaml
+      ./worker/install.yaml
     ];
   }
