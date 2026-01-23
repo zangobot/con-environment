@@ -1,7 +1,28 @@
 { config, pkgs, inputs, ... }:
   let
     ip = "10.211.0.10";
-    controlIp = "10.211.0.20";
+    control = {
+      ip = "10.211.0.20";
+      mac = "38:05:25:34:33:04";
+      host = "aivControl";
+    };
+    workers = [
+      {
+        ip = "10.211.0.21";
+        mac = "58:47:ca:7f:54:64";
+        host = "aivWorker1";
+      }
+      {
+        ip = "10.211.0.22";
+        mac = "58:47:ca:7f:54:64";
+        host = "aivWorker2";
+      }
+      {
+        ip = "10.211.0.23";
+        mac = "58:47:ca:7f:54:64";
+        host = "aivWorker3";
+      }
+    ];
     inspectorBuild = inputs.self.nixosConfigurations.inspector.config.system.build;
     bootScript = pkgs.writeText "boot.ipxe" ''
       #!ipxe
@@ -132,6 +153,7 @@
   # ==========================================
   environment.systemPackages = with pkgs; [
     vim
+    wget
     nano
     talosctl
     kubectl
@@ -144,7 +166,7 @@
     hubble
     nmap
     tcpdump
-  ] ++ [ patchGenerator ];
+  ];
   # ==========================================
   # 8. Main DHCP & DNS (Pure Dnsmasq PXE)
   # ==========================================
@@ -178,12 +200,15 @@
 
       # Static Hosts
       dhcp-host = [
-        "aa:bb:cc:dd:ee:01,${controlIp},k8s-control-plane"
+        "${control.mac},${control.ip},${control.host}"
         "aa:bb:cc:dd:ee:02,10.211.0.21,k8s-worker-01"
         "aa:bb:cc:dd:ee:03,10.211.0.22,k8s-worker-02"
         "aa:bb:cc:dd:ee:03,10.211.0.24,k8s-worker-03"
       ];
-      address = [ "/nas/${ip}" ];
+      address = [ 
+        "/nas/${ip}"
+        "/.aiv/${control.ip}"
+      ];
 
       # ==========================================
       # TFTP & PXE Configuration

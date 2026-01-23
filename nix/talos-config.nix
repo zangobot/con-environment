@@ -7,27 +7,34 @@ let
   controlPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") patchesSet.control;
   workerPatchFlags = lib.concatMapStringsSep " " (p: "--config-patch-control-plane @${p}") patchesSet.worker;
 in
-pkgs.writeShellScript "generate-talos-configs" ''
+pkgs.writeShellScriptBin "generate-talos-configs" ''
   set -e
-  SECRETS_FILE=$1
-  OUTPUT_DIR=$2
 
-  if [ -z "$SECRETS_FILE" ] || [ -z "$OUTPUT_DIR" ]; then
-    echo "Usage: $0 <path-to-secrets> <output-dir>"
-    exit 1
+  if [ $# -eq 1 ]; then
+    SECRETS_FLAG="--with-secrets $1"
+  else
+    SECRETS_FLAG=""
+  fi
+  if [ $# -eq 2 ]; then
+    SECRETS_FLAG="--with-secrets $1"
+    OUTPUT_FLAG="--output $2"
+  else
+    OUTPUT_FLAG=""
   fi
 
   ${pkgs.talosctl}/bin/talosctl gen config \
     "${clusterName}" \
     "${clusterEndpoint}" \
-    --install-disk "/dev/sda" \
+    --install-disk "" \
     --talos-version "${talosVersion}" \
     ${patchFlags} \
     ${controlPatchFlags} \
     ${workerPatchFlags} \
-    --with-secrets \"$SECRETS_FILE\" \
-    --output \"$OUTPUT_DIR\"
+    $SECRETS_FLAG \
+    $OUTPUT_FLAG
 
-  chmod 644 controlplane.yaml worker.yaml talosconfig
-  echo "✅ Configuration generated in $OUTPUT_DIR"
+  if [ $# -eq 2 ]; then
+    chmod 644 $2/controlplane.yaml $2/worker.yaml $2/talosconfig
+    echo "✅ Configuration generated in \"$2\""
+  fi
 ''
