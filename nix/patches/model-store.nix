@@ -45,7 +45,7 @@ let
       resources:
         requests:
           storage: ${size}
-      volumeName: ${name}
+      volumeName: ${name}-pv
   '';
 
 in

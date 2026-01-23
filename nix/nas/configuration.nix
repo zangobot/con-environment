@@ -271,28 +271,28 @@
   # ==========================================
   # 9. PXE Files Setup (The "Plumbing")
   # ==========================================
-  # systemd.tmpfiles.rules = import ./pxe-boot.nix {
-  #   inherit pkgs ip;
-  #   message    = "Starting Talos Boot...";
-  #   kernelPath = "${talosImages}/vmlinuz";  # Talos outputs 'vmlinuz'
-  #   initrdPath = "${talosImages}/initrd";
-  #   cmdline    = "talos.platform=metal console=tty0 init_on_alloc=1 slab_nomerge pti=on consoleblank=0 nvme_core.io_timeout=4294967295 printk.devkmsg=on selinux=1 module.sig_enforce=1";
-  # } ++ [
-  #   # From Section 2 (ZFS) permit everyone
-  #   "z /mnt/data 0777 nobody nogroup -"
-  # ];
-
   systemd.tmpfiles.rules = import ./pxe-boot.nix {
-    inherit pkgs;
-    ip = ip;
-    message    = "Starting Inspector Boot...";
-    kernelPath = "${inspectorBuild.kernel}/bzImage"; # NixOS outputs 'bzImage'
-    initrdPath = "${inspectorBuild.netbootRamdisk}/initrd";
-    cmdline    = "init=${inspectorBuild.toplevel}/init loglevel=4";
+    inherit pkgs ip;
+    message    = "Starting Talos Boot...";
+    kernelPath = "${talosImages}/vmlinuz";  # Talos outputs 'vmlinuz'
+    initrdPath = "${talosImages}/initrd";
+    cmdline    = "talos.platform=metal console=tty0 init_on_alloc=1 slab_nomerge pti=on consoleblank=0 nvme_core.io_timeout=4294967295 printk.devkmsg=on selinux=1 module.sig_enforce=1";
   } ++ [
     # From Section 2 (ZFS) permit everyone
     "z /mnt/data 0777 nobody nogroup -"
   ];
+
+  # systemd.tmpfiles.rules = import ./pxe-boot.nix {
+  #   inherit pkgs;
+  #   ip = ip;
+  #   message    = "Starting Inspector Boot...";
+  #   kernelPath = "${inspectorBuild.kernel}/bzImage"; # NixOS outputs 'bzImage'
+  #   initrdPath = "${inspectorBuild.netbootRamdisk}/initrd";
+  #   cmdline    = "init=${inspectorBuild.toplevel}/init loglevel=4";
+  # } ++ [
+  #   # From Section 2 (ZFS) permit everyone
+  #   "z /mnt/data 0777 nobody nogroup -"
+  # ];
 
   system.stateVersion = "25.11";
 }
