@@ -144,8 +144,15 @@ Bash
 
 # Run this from your local flake directory
 ```bash
+nix run nixpkgs#nixos-rebuild -- test --flake .#nas \
+  --target-host admin@cluster-control \
+  --build-host admin@cluster-control \
+  --sudo
+```
+If that works, switch:
+```bash
 nix run nixpkgs#nixos-rebuild -- switch --flake .#nas \
   --target-host admin@cluster-control \
   --build-host admin@cluster-control \
-  --use-remote-sudo
+  --sudo
 ```

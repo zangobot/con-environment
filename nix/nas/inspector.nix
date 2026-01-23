@@ -25,6 +25,8 @@
     neofetch
   ];
 
+  programs.nix-ld.enable = true;
+
   fileSystems."/mnt/nas" = {
     device = "10.211.0.10:/mnt/data";
     fsType = "nfs";

@@ -2,24 +2,32 @@
   let
     ip = "10.211.0.10";
     control = {
-      ip = "10.211.0.20";
-      mac = "38:05:25:34:33:04";
-      host = "aivControl";
+      ip1 = "10.211.0.20";
+      ip2 = "10.211.0.20";
+      mac1 = "38:05:25:34:33:03";
+      mac2 = "38:05:25:34:33:04";
+      host = "control";
     };
     workers = [
       {
-        ip = "10.211.0.21";
-        mac = "58:47:ca:7f:54:64";
+        ip1 = "10.211.0.22";
+        ip2 = "10.211.0.23";
+        mac1 = "58:47:ca:7f:54:64";
+        mac2 = "58:47:ca:7f:54:65";
         host = "aivWorker1";
       }
       {
-        ip = "10.211.0.22";
-        mac = "58:47:ca:7f:54:64";
+        ip1 = "10.211.0.24";
+        ip2 = "10.211.0.25";
+        mac1 = "38:05:25:31:07:bd";
+        mac2 = "38:05:25:31:07:bb";
         host = "aivWorker2";
       }
       {
-        ip = "10.211.0.23";
-        mac = "58:47:ca:7f:54:64";
+        ip1 = "10.211.0.26";
+        ip2 = "10.211.0.27";
+        mac1 = "58:47:ca:7e:f0:ec";
+        mac2 = "58:47:ca:7e:f0:ed";
         host = "aivWorker3";
       }
     ];
@@ -65,7 +73,7 @@
   networking.hostId = "8425e349"; 
 
   # ==========================================
-  # 2. ZFS & Storage Configuration
+  # 2. ZFS & NFS Configuration
   # ==========================================
   
   boot.supportedFilesystems = [ "zfs" ];
@@ -75,6 +83,17 @@
     device = "tank/share";
     fsType = "zfs";
     options = [ "zfsutil" ]; 
+  };
+
+    services.nfs.server = {
+    enable = true;
+    # 1. rw: Read/Write
+    # 2. insecure: Allows ports > 1024 (Crucial for macOS/Windows clients)
+    # 3. all_squash: Map ALL users to the anonymous user (nobody)
+    # 4. anonuid/anongid: Explicitly define the anonymous ID (65534 is standard 'nobody')
+    exports = ''
+      /mnt/data 10.211.0.0/24(rw,nohide,insecure,no_subtree_check,all_squash,anonuid=65534,anongid=65534)
+    '';
   };
 
   # ==========================================
@@ -121,17 +140,6 @@
       PasswordAuthentication = false;
       PermitRootLogin = "no";
     };
-  };
-
-  # ==========================================
-  # 5. NFS Server Configuration
-  # ==========================================
-  
-  services.nfs.server = {
-    enable = true;
-    exports = ''
-      /mnt/data 10.211.0.0/24(rw,nohide,insecure,no_subtree_check,no_root_squash)
-    '';
   };
 
   # ==========================================
@@ -200,11 +208,12 @@
 
       # Static Hosts
       dhcp-host = [
-        "${control.mac},${control.ip},${control.host}"
-        "aa:bb:cc:dd:ee:02,10.211.0.21,k8s-worker-01"
-        "aa:bb:cc:dd:ee:03,10.211.0.22,k8s-worker-02"
-        "aa:bb:cc:dd:ee:03,10.211.0.24,k8s-worker-03"
-      ];
+        "${control.mac1},${control.ip1},${control.host}"
+        "${control.mac2},${control.ip2},${control.host}"
+      ] ++ (builtins.concatMap (w: [
+        "${w.mac1},${w.ip1},${w.host}"
+        "${w.mac2},${w.ip2},${w.host}"
+      ]) workers);
       address = [ 
         "/nas/${ip}"
         "/.aiv/${control.ip}"
@@ -243,5 +252,8 @@
     "L+ /var/lib/tftpboot/bzImage - - - - ${inspectorBuild.kernel}/bzImage"
     "L+ /var/lib/tftpboot/initrd - - - - ${inspectorBuild.netbootRamdisk}/initrd"
     "L+ /var/lib/tftpboot/boot.ipxe - - - - ${bootScript}"
+
+    # From Section 2 (ZFS) permit everyone
+    "z /mnt/data 0777 nobody nogroup -"
   ];
 }
