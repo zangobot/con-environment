@@ -32,14 +32,7 @@
       }
     ];
     inspectorBuild = inputs.self.nixosConfigurations.inspector.config.system.build;
-    bootScript = pkgs.writeText "boot.ipxe" ''
-      #!ipxe
-      dhcp
-      echo Starting Inspector Boot...
-      kernel tftp://${ip}/bzImage init=${inspectorBuild.toplevel}/init loglevel=4
-      initrd tftp://${ip}/initrd
-      boot
-    '';
+
     talosImages = import ./talos-image.nix { 
       inherit pkgs; 
       version = "v1.12.1";
@@ -216,7 +209,8 @@
       ]) workers);
       address = [ 
         "/nas/${ip}"
-        "/.aiv/${control.ip}"
+        "/.aiv/${control.ip1}"
+        "/.aiv/${control.ip2}"
       ];
 
       # ==========================================
@@ -245,15 +239,26 @@
   # ==========================================
   # 9. PXE Files Setup (The "Plumbing")
   # ==========================================
-  systemd.tmpfiles.rules = [
-    "d /var/lib/tftpboot 0755 root root -"
-    "L+ /var/lib/tftpboot/ipxe.efi - - - - ${pkgs.ipxe}/ipxe.efi"
-    "L+ /var/lib/tftpboot/undionly.kpxe - - - - ${pkgs.ipxe}/undionly.kpxe"
-    "L+ /var/lib/tftpboot/bzImage - - - - ${inspectorBuild.kernel}/bzImage"
-    "L+ /var/lib/tftpboot/initrd - - - - ${inspectorBuild.netbootRamdisk}/initrd"
-    "L+ /var/lib/tftpboot/boot.ipxe - - - - ${bootScript}"
-
+  systemd.tmpfiles.rules = import ./pxe-boot.nix {
+    inherit pkgs ip;
+    message    = "Starting Talos Boot...";
+    kernelPath = "${talosImages}/vmlinuz";  # Talos outputs 'vmlinuz'
+    initrdPath = "${talosImages}/initrd";
+    cmdline    = "talos.platform=metal console=tty0 console=ttyS0";
+  } ++ [
     # From Section 2 (ZFS) permit everyone
     "z /mnt/data 0777 nobody nogroup -"
   ];
+
+  /* systemd.tmpfiles.rules = import ./pxe-boot.nix {
+    inherit pkgs ip;
+    message    = "Starting Inspector Boot...";
+    kernelPath = "${inspectorBuild.kernel}/bzImage"; # NixOS outputs 'bzImage'
+    initrdPath = "${inspectorBuild.netbootRamdisk}/initrd";
+    cmdline    = "init=${inspectorBuild.toplevel}/init loglevel=4";
+  } ++ [
+    # From Section 2 (ZFS) permit everyone
+    "z /mnt/data 0777 nobody nogroup -"
+  ];
+  */
 }
