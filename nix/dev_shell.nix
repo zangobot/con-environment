@@ -19,8 +19,8 @@ let
     lib = pkgs.lib;
     clusterName = "aivProd";
     talosVersion = "v1.12.1";
-    vIp = controlIp;
-    nfsServer = ip;
+    vIp = "10.211.0.20";
+    nfsServer = "10.211.0.10";
     mainPath = "/mnt/data/dynamic-pvc";
     vllmPath = "/mnt/data/model-store";
   };
@@ -87,7 +87,7 @@ let
     hubble
     sops
     ssh-to-age
-  ] ++ myContainerScripts ++ [ rustToolchain nasPatchGenerator talosPxe ];
+  ] ++ myContainerScripts ++ [ rustToolchain talosConfigs talosPxe ];
 in
 {
   shell = pkgs.mkShell {
@@ -117,8 +117,6 @@ in
           fi
         fi
         # Todo: move this elsewhere
-        export TALOS_SECRETS=$(sops -d ./deployment/secrets.yaml)
-
         export TALOS_VERSION="v1.11.0"
         export KUBECONFIG="$DATA_DIR/talos/kubeconfig"
         export TALOSCONFIG="$DATA_DIR/talos/talosconfig"
