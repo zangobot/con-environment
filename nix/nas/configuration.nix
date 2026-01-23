@@ -2,33 +2,57 @@
   let
     ip = "10.211.0.10";
     control = {
+      host = "control";
+
       ip1 = "10.211.0.20";
       ip2 = "10.211.0.21";
       mac1 = "38:05:25:34:33:03";
       mac2 = "38:05:25:34:33:04";
-      host = "control";
+
+      slowIp1 = "10.211.0.30";
+      slowIp2 = "10.211.0.31";
+      slowMac1 = "38:05:25:34:33:01";
+      slowMac2 = "38:05:25:34:33:02";
     };
     workers = [
       {
+        host = "worker1";
+
         ip1 = "10.211.0.22";
         ip2 = "10.211.0.23";
         mac1 = "58:47:ca:7f:54:64";
         mac2 = "58:47:ca:7f:54:65";
-        host = "worker1";
+
+        slowIp1 = "10.211.0.32";
+        slowIp2 = "10.211.0.33";
+        slowMac1 = "58:47:ca:7f:54:67";
+        slowMac2 = "58:47:ca:7f:54:65";
       }
       {
+        host = "worker2";
+
         ip1 = "10.211.0.24";
         ip2 = "10.211.0.25";
         mac1 = "38:05:25:31:07:bd";
         mac2 = "38:05:25:31:07:bb";
-        host = "worker2";
+
+        slowIp1 = "10.211.0.34";
+        slowIp2 = "10.211.0.35";
+        slowMac1 = "38:05:25:31:07:bc";
+        slowMac2 = "38:05:25:31:07:bd";
       }
       {
+        host = "worker3";
+
         ip1 = "10.211.0.26";
         ip2 = "10.211.0.27";
         mac1 = "58:47:ca:7e:f0:ec";
         mac2 = "58:47:ca:7e:f0:ed";
-        host = "worker3";
+
+        slowIp1 = "10.211.0.36";
+        slowIp2 = "10.211.0.37";
+        slowMac1 = "58:47:ca:7e:f0:ee";
+        slowMac2 = "58:47:ca:7e:f0:ef";
       }
     ];
     inspectorBuild = inputs.self.nixosConfigurations.inspector.config.system.build;
@@ -36,17 +60,17 @@
     talosImages = import ./talos-image.nix { 
       inherit pkgs; } {
       version = "v1.12.1";
-      platform = "metal";
-      arch = "amd64";
-      systemExtensions = [
-        "siderolabs/amd-ucode"
-        "siderolabs/intel-ucode"
-        "siderolabs/nonfree-kmod-nvidia-lts"
-        "siderolabs/nvidia-container-toolkit-lts"
-      ];
-      sha256 = "sha256-xbWnVCIH9JMp9nyBnUKyCZsHafKUtr0ZfOwTqHdlMWU=";
+        platform = "metal";
+        arch = "amd64";
+        systemExtensions = [
+          "siderolabs/amd-ucode"
+          "siderolabs/intel-ucode"
+          "siderolabs/nvidia-container-toolkit-lts"
+          "siderolabs/nvidia-open-gpu-kernel-modules-lts"
+        ];
+        sha256 = "sha256-ctKKY9stHhMosgyKCDWQVMzOxv0wPnqsRitZlkhxYpY=";
 
-      diskImage = "pxe-assets";
+        diskImage = "pxe-assets";
     };
   in
 {
@@ -203,14 +227,20 @@
       dhcp-host = [
         "${control.mac1},${control.ip1},${control.host}"
         "${control.mac2},${control.ip2},${control.host}"
+        "${control.slowMac1},${control.slowIp1},${control.host}"
+        "${control.slowMac2},${control.slowIp2},${control.host}"
       ] ++ (builtins.concatMap (w: [
         "${w.mac1},${w.ip1},${w.host}"
         "${w.mac2},${w.ip2},${w.host}"
+        "${w.slowMac1},${w.slowIp1},${w.host}"
+        "${w.slowMac2},${w.slowIp2},${w.host}"
       ]) workers);
       address = [ 
         "/nas/${ip}"
         "/.aiv/${control.ip1}"
         "/.aiv/${control.ip2}"
+        "/.aiv/${control.slowIp1}"
+        "/.aiv/${control.slowIp2}"
       ];
 
       # ==========================================
@@ -244,21 +274,22 @@
     message    = "Starting Talos Boot...";
     kernelPath = "${talosImages}/vmlinuz";  # Talos outputs 'vmlinuz'
     initrdPath = "${talosImages}/initrd";
-    cmdline    = "talos.platform=metal talos.platform=metal slab_nomerge pti=on console=tty0 console=ttyS0";
+    cmdline    = "talos.platform=metal console=tty0 init_on_alloc=1 slab_nomerge pti=on consoleblank=0 nvme_core.io_timeout=4294967295 printk.devkmsg=on selinux=1 module.sig_enforce=1";
   } ++ [
     # From Section 2 (ZFS) permit everyone
     "z /mnt/data 0777 nobody nogroup -"
   ];
 
-  /* systemd.tmpfiles.rules = import ./pxe-boot.nix {
-    inherit pkgs ip;
-    message    = "Starting Inspector Boot...";
-    kernelPath = "${inspectorBuild.kernel}/bzImage"; # NixOS outputs 'bzImage'
-    initrdPath = "${inspectorBuild.netbootRamdisk}/initrd";
-    cmdline    = "init=${inspectorBuild.toplevel}/init loglevel=4";
-  } ++ [
-    # From Section 2 (ZFS) permit everyone
-    "z /mnt/data 0777 nobody nogroup -"
-  ];
-  */
+  # systemd.tmpfiles.rules = import ./pxe-boot.nix {
+  #   inherit pkgs ip;
+  #   message    = "Starting Inspector Boot...";
+  #   kernelPath = "${inspectorBuild.kernel}/bzImage"; # NixOS outputs 'bzImage'
+  #   initrdPath = "${inspectorBuild.netbootRamdisk}/initrd";
+  #   cmdline    = "init=${inspectorBuild.toplevel}/init loglevel=4";
+  # } ++ [
+  #   # From Section 2 (ZFS) permit everyone
+  #   "z /mnt/data 0777 nobody nogroup -"
+  # ];
+
+  system.stateVersion = "25.11";
 }

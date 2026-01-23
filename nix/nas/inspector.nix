@@ -39,14 +39,33 @@
     after = [ "network.target" "mnt-nas.mount" ];
     requires = [ "mnt-nas.mount" ];
     wantedBy = [ "multi-user.target" ];
+
+    path = with pkgs; [
+      hostname
+      util-linux
+      coreutils
+      gptfdisk
+      systemd
+      parted
+    ];
     
+    script = ''
+      ${inputs.self.packages.${pkgs.system}.inspector-bin}/bin/inspector inspect > /mnt/nas/inspector-report-$(hostname).yaml
+
+      if [ -f /mnt/nas/WIPE_ALL ]; then
+        TIMESTAMP=$(date +%s)
+        LOGFILE="/mnt/nas/wipe-$(hostname)-$TIMESTAMP.log"
+        ${inputs.self.packages.${pkgs.system}.inspector-bin}/bin/inspector wipe --confirm > $LOGFILE
+      fi
+
+      sync
+      poweroff
+    '';
+
     serviceConfig = {
       Type = "oneshot";
-      Script = ''
-        ${inputs.self.packages.${pkgs.system}.inspector-bin}/bin/inspector inspect > /mnt/nas/inspector-report-$(hostname).yaml
-      '';
     };
   };
 
-  system.stateVersion = "24.11"; 
+  system.stateVersion = "25.11";
 }

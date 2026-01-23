@@ -144,13 +144,22 @@
               cargoLock.lockFile = ./Cargo.lock;
 
               buildInputs = commonBuildInputs;
-              nativeBuildInputs = commonNativeBuildInputs;
+              nativeBuildInputs = commonNativeBuildInputs ++ [ pkgs.makeWrapper ];
               buildAndTestSubdir = "crates/inspector";
               env = {
                 LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath [ pkgs.openssl ]}";
               };
               cargoBuildFlags = [ "-p" "inspector" ];
               doCheck = false;
+
+              postInstall = ''
+                wrapProgram $out/bin/inspector \
+                  --prefix PATH : ${pkgs.lib.makeBinPath [
+                    pkgs.util-linux   # lsblk, wipefs, partprobe
+                    pkgs.gptfdisk     # sgdisk
+                    pkgs.coreutils    # sync
+                  ]}
+              '';
 
               meta = with lib; {
                 mainProgram = "inspector";
@@ -183,6 +192,7 @@
         {
           process-compose."default" = dev_shell.environment;
           devShells.default = dev_shell.shell;
+          devShells."con" = dev_shell.conShell;
           packages = binaries // {
             nas-installer-iso = inputs.nixos-generators.nixosGenerate {
               inherit system;
