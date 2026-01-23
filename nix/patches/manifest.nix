@@ -18,7 +18,7 @@ let
     path = vllmPath;
     name = "model-store";
   };
-  nvidiaFile = import ./nvidia.nix {
+  nvidiaHelmChart = import ./nvidia.nix {
     inherit pkgs kubelib;
   };
 
@@ -28,9 +28,11 @@ in {
       (ghcrAuthFile)
       (mainPcvFile)
       (modelPvcFile)
-      (nvidiaFile)
+      (nvidiaHelmChart)
       ./install.yaml
     ];
     control = [./control/schedule.yaml];
-    worker = [];
+    worker = [
+      ./worker/nvidia_kernel.yaml
+    ];
   }

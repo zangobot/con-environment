@@ -3,7 +3,7 @@
     ip = "10.211.0.10";
     control = {
       ip1 = "10.211.0.20";
-      ip2 = "10.211.0.20";
+      ip2 = "10.211.0.21";
       mac1 = "38:05:25:34:33:03";
       mac2 = "38:05:25:34:33:04";
       host = "control";
@@ -14,27 +14,27 @@
         ip2 = "10.211.0.23";
         mac1 = "58:47:ca:7f:54:64";
         mac2 = "58:47:ca:7f:54:65";
-        host = "aivWorker1";
+        host = "worker1";
       }
       {
         ip1 = "10.211.0.24";
         ip2 = "10.211.0.25";
         mac1 = "38:05:25:31:07:bd";
         mac2 = "38:05:25:31:07:bb";
-        host = "aivWorker2";
+        host = "worker2";
       }
       {
         ip1 = "10.211.0.26";
         ip2 = "10.211.0.27";
         mac1 = "58:47:ca:7e:f0:ec";
         mac2 = "58:47:ca:7e:f0:ed";
-        host = "aivWorker3";
+        host = "worker3";
       }
     ];
     inspectorBuild = inputs.self.nixosConfigurations.inspector.config.system.build;
 
     talosImages = import ./talos-image.nix { 
-      inherit pkgs; 
+      inherit pkgs; } {
       version = "v1.12.1";
       platform = "metal";
       arch = "amd64";
@@ -244,7 +244,7 @@
     message    = "Starting Talos Boot...";
     kernelPath = "${talosImages}/vmlinuz";  # Talos outputs 'vmlinuz'
     initrdPath = "${talosImages}/initrd";
-    cmdline    = "talos.platform=metal console=tty0 console=ttyS0";
+    cmdline    = "talos.platform=metal talos.platform=metal slab_nomerge pti=on console=tty0 console=ttyS0";
   } ++ [
     # From Section 2 (ZFS) permit everyone
     "z /mnt/data 0777 nobody nogroup -"
