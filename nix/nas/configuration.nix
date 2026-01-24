@@ -217,7 +217,7 @@
       domain = "cluster.local";
 
       # DHCP Subnet
-      dhcp-range = [ "10.211.0.50,10.211.0.100,255.255.255.0,24h" ];
+      dhcp-range = [ "10.211.0.100,10.211.0.200,255.255.255.0,24h" ];
 
       # Options
       dhcp-option = [
@@ -239,10 +239,7 @@
       ]) workers);
       address = [ 
         "/nas/${ip}"
-        "/.aiv/${control.ip1}"
-        "/.aiv/${control.ip2}"
-        "/.aiv/${control.slowIp1}"
-        "/.aiv/${control.slowIp2}"
+        "/.aiv.local/10.211.0.50"
       ];
 
       # ==========================================

@@ -53,7 +53,7 @@ let
 
     localRedirectPolicy = true;
 
-    bgpControlPlane = {
+    l2Announcements = {
       enabled = true;
     };
 
@@ -61,6 +61,9 @@ let
       enabled = true;
       default = true;
       loadbalancerMode = "shared";
+      service = {
+        loadBalancerIP = "10.211.0.50";
+      };
     };
 
     tunnelProtocol = "vxlan";
@@ -94,6 +97,32 @@ let
     };
   };
 
+  l2Resources = ''
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: cilium-l2-announcements
+      namespace: kube-system
+    rules:
+      - apiGroups: ["coordination.k8s.io"]
+        resources: ["leases"]
+        verbs: ["get", "list", "watch", "create", "update", "patch"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: cilium-l2-announcements
+      namespace: kube-system
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: cilium-l2-announcements
+    subjects:
+      - kind: ServiceAccount
+        name: cilium
+        namespace: kube-system  
+  '';
+
   cilium_chart = kubelib.downloadHelmChart {
     repo = "https://helm.cilium.io/";
     chart = "cilium";
@@ -113,7 +142,6 @@ in
 pkgs.runCommand "cilium.yaml" {} ''
     set -euo pipefail
     
-    # Use a subshell to group all output and redirect it once
     (
       cat << 'PATCH_START'
 cluster:
@@ -128,6 +156,13 @@ cluster:
 PATCH_START
     
       sed 's/^/        /' "${renderedCiliumManifests}"
+
+      cat << 'L2_START'
+    - name: cilium-l2
+      contents: |
+L2_START
+
+      echo "${l2Resources}" | sed 's/^/        /'
       
     ) > "$out"
 ''
