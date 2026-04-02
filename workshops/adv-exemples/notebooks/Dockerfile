@@ -1,43 +1,42 @@
 FROM python:3.12-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    ZIP_PASSWORD=infected \
+    WORKSPACE=/workspace \
+    ZOO_DIR=/workspace/theZoo/malware/Binaries \
+    MALWARE_SAMPLES=/workspace/malware_samples
+
+WORKDIR ${WORKSPACE}
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
-    python3-dev \
     git \
+    unzip \
  && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspace
+COPY requirements.txt goodware_strings.txt ./
 
-# Install Python libraries
-COPY requirements.txt .
-COPY goodware_strings.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    python -m pip install -r requirements.txt
 
-# Copy the notebooks inside the container
-#COPY deep-networks.ipynb /workspace/deep-networks.ipynb
-#COPY domain-knowledge.ipynb /workspace/domain-knowledge.ipynb
+RUN git clone --depth=1 https://github.com/ytisf/theZoo.git && \
+    mkdir -p "${MALWARE_SAMPLES}" && \
+    find "${ZOO_DIR}" -type f -name "*.zip" -exec unzip -o -P "${ZIP_PASSWORD}" {} -d "${MALWARE_SAMPLES}" \; && \
+    find "${MALWARE_SAMPLES}" -type f -name "*.zip" -delete && \
+    find "${MALWARE_SAMPLES}" -type f -print0 | \
+    while IFS= read -r -d '' f; do \
+        h=$(sha256sum "$f" | cut -d' ' -f1); \
+        mv "$f" "${MALWARE_SAMPLES}/$h.file"; \
+    done
 
-ENV ZIP_PASSWORD=infected
-ENV ZOO_DIR=/workspace/theZoo/malware/Binaries
-ENV MALWARE_SAMPLES=/workspace/malware_samples
-RUN git clone https://github.com/ytisf/theZoo.git
+RUN useradd --create-home --shell /bin/bash player && \
+    chown -R player:player "${WORKSPACE}"
 
-RUN mkdir -p $MALWARE_SAMPLES
-RUN find $ZOO_DIR -type f -name "*.zip" -exec unzip -o -P "infected" {} -d $MALWARE_SAMPLES \;
-RUN rm -f $MALWARE_SAMPLES/*.zip
-RUN find "$MALWARE_SAMPLES" -type f -exec sh -c ' \
-    f="$1"; \
-    h=$(sha256sum "$f" | cut -d" " -f1); \
-    mv "$f" "$MALWARE_SAMPLES/$h.file" \
-' sh {} \;
-
-# Create a non-root user (Standard practice for Jupyter)
-RUN useradd -m player
-RUN chown -R player:player /workspace
 USER player
 
 EXPOSE 8888
 
-# Launch Jupyter Notebook (No token/password for local convenience)
-CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--NotebookApp.token=''", "--NotebookApp.password=''"]
+CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--ServerApp.root_dir=/workspace", "--ServerApp.token=", "--ServerApp.password="]
