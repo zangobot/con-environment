@@ -30,13 +30,22 @@ RUN git clone --depth=1 https://github.com/ytisf/theZoo.git && \
     while IFS= read -r -d '' f; do \
         h=$(sha256sum "$f" | cut -d' ' -f1); \
         mv "$f" "${MALWARE_SAMPLES}/$h.file"; \
-    done
+    done && \
+    rm -rf /workspace/theZoo
 
-RUN useradd --create-home --shell /bin/bash player && \
-    chown -R player:player "${WORKSPACE}"
+# Create a non-root user (Standard practice for Jupyter)
+RUN useradd -m player
+RUN chown -R player:player /workspace
 
 USER player
 
-EXPOSE 8888
+EXPOSE 5555
 
-CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--ServerApp.root_dir=/workspace", "--ServerApp.token=", "--ServerApp.password="]
+# Launch Jupyter Notebook
+CMD ["sh", "-c", "exec jupyter notebook \
+    --ip=0.0.0.0 \
+    --port=5555 \
+    --no-browser \
+    --NotebookApp.token='' \
+    --NotebookApp.password='' \
+    --NotebookApp.base_url=\"$BASE_URL\""]
