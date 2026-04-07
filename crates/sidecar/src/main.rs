@@ -1,8 +1,12 @@
-use std::sync::{
-    atomic::{AtomicI64, Ordering},
-    Arc,
-};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::{
+        atomic::{AtomicI64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+use tokio::signal;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 mod config;
@@ -18,11 +22,7 @@ use tracing::{error, info};
 /// Shared state between the HTTP server and the TCP proxy.
 #[derive(Debug)]
 pub struct AppState {
-    /// The last time any activity was detected on a proxied stream.
-    /// Stored as a Unix timestamp (seconds).
     last_activity: AtomicI64,
-    // We don't really need this mutex, AtomicI64 is sufficient.
-    // Keeping it simple.
 }
 
 impl AppState {
@@ -55,9 +55,7 @@ fn current_timestamp() -> i64 {
 async fn main() {
     tracing_subscriber::registry()
         .with(fmt::layer().with_target(true))
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            "trace,rustls=off".into()
-        }))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "trace,rustls=off".into()))
         .init();
 
     info!("Starting workshop sidecar...");
@@ -95,12 +93,40 @@ async fn main() {
         info!("Starting HTTP health server...");
         if let Err(e) = http_server::run_http_server(http_state, http_config).await {
             error!("HTTP health server failed: {}", e);
+            std::process::exit(1);
         }
     });
 
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
     // 4. Run the TCP proxy server (blocking)
     info!("Starting TCP proxy server...");
-    if let Err(e) = proxy::run_proxy(state, config).await {
-        error!("TCP proxy server failed: {}", e);
+    tokio::select! {
+        result = proxy::run_proxy(state.clone(), config.clone()) => {
+            if let Err(e) = result {
+                error!("TCP proxy server failed: {}", e);
+            }
+        }
+        _ = ctrl_c => {
+            info!("Received shutdown signal");
+        }
+        _ = terminate => {
+            info!("Received shutdown signal");
+        }
     }
+
+    // Give active connections time to drain
+    tokio::time::sleep(Duration::from_secs(5)).await;
 }

@@ -1,129 +1,158 @@
-use crate::{AppState, HubError, auth::UserIdentity, orchestrator};
-use axum::{
-    Extension, body::Body, extract::{Path, State}, http::{Request, StatusCode, Uri}, response::{IntoResponse, Response}
-};
-use http_body_util::BodyExt;
-//use tokio_util::io::ReaderStream;
-use tracing::{info, debug, warn};
+use crate::{HubError, auth};
+use async_trait::async_trait;
+use axum::http::Uri;
+use pingora::prelude::*;
+use std::str::FromStr;
 
-#[axum::debug_handler]
-pub async fn workshop_index_handler(
-    State(state): State<AppState>,
-    Extension(claims): Extension<UserIdentity>,
-    request: Request<Body>,
-) -> Result<Response, StatusCode> {
-    http_handler(state, None, claims, request).await
-}
+pub struct WorkshopProxy;
 
-/// Axum handler that performs auth and proxies HTTP requests.
-#[axum::debug_handler]
-pub async fn workshop_other_handler(
-    State(state): State<AppState>,
-    Path(path): Path<String>,
-    Extension(claims): Extension<UserIdentity>,
-    request: Request<Body>,
-) -> Result<Response, StatusCode> {
-    http_handler(state, Some(path), claims, request).await
-}
+/// Extract the subdomain from a Host header value.
+///
+/// Examples:
+///   "llm-embeddings.aiv.local"      -> Some("llm-embeddings")
+///   "llm-embeddings.aiv.local:8080" -> Some("llm-embeddings")
+///   "aiv.local"                     -> None
+///   "aiv.local:8080"                -> None
+///   "localhost"                     -> None
+fn extract_subdomain(host: &str) -> Option<&str> {
+    // Strip optional port  ("host:port" -> "host")
+    let hostname = host.split(':').next().unwrap_or(host);
 
-pub async fn http_handler(
-    state: AppState,
-    path: Option<String>,
-    user_id: UserIdentity,
-    request: Request<Body>,
-) -> Result<Response, StatusCode> {
-    let method = request.method().clone();
-    let uri = request.uri().clone();
-    
-    tracing::info!(
-        "🌐 HTTP request - user: {}, method: {}, uri: {}, path: {:?}",
-        user_id.user_id,
-        method,
-        uri,
-        path
-    );
+    // Split into at most 2 parts: subdomain and the rest
+    // "llm-embeddings.aiv.local" -> ["llm-embeddings", "aiv.local"]
+    // "aiv.local"                -> ["aiv", "local"]  (rest has no dot -> bare domain)
+    let (first, rest) = hostname.split_once('.')?;
 
-    let config = state.config.clone();
-    
-    tracing::debug!("Getting or creating pod for user: {}", user_id.user_id);
-    let binding = match orchestrator::get_or_create_pod(
-        &state.kube_client,
-        &user_id.user_id,
-        config,
-    )
-    .await
-    {
-        Ok(binding) => {
-            tracing::info!(
-                "✓ Pod binding obtained - pod: {}, service: {}, dns: {}",
-                binding.pod_name,
-                binding.service_name,
-                binding.cluster_dns_name
-            );
-            binding
-        }
-        Err(HubError::PodLimitReached) => {
-            tracing::warn!(
-                "❌ Pod limit reached - denying user {}",
-                user_id.user_id
-            );
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
-        }
-        Err(e) => {
-            tracing::error!(
-                "❌ Failed to get/create pod for user {}: {}",
-                user_id.user_id,
-                e
-            );
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    let path = path.unwrap_or("/".to_string());
-    
-    tracing::debug!(
-        "Proxying to {}:8888{} for user {}",
-        binding.cluster_dns_name,
-        path,
-        user_id.user_id
-    );
-
-    let (mut parts, body) = request.into_parts();
-    let body = http_body_util::Full::new(body.collect().await.unwrap().to_bytes());
-    
-    parts.uri = Uri::builder()
-        .scheme("http")
-        .authority(format!("{}:8888", binding.cluster_dns_name))
-        .path_and_query(path.clone())
-        .build()
-        .expect("valid uri");
-    
-    let proxy_req = Request::from_parts(parts, body.into());
-
-    tracing::trace!(
-        "Sending proxy request - uri: {}, method: {}",
-        proxy_req.uri(),
-        proxy_req.method()
-    );
-
-    match state.http_client.request(proxy_req).await {
-        Ok(proxy_res) => {
-            let status = proxy_res.status();
-            tracing::info!(
-                "✓ Proxy response received - status: {}, user: {}",
-                status,
-                user_id.user_id
-            );
-            Ok(proxy_res.into_response())
-        }
-        Err(e) => {
-            tracing::error!(
-                "❌ Proxy request failed for user {} to {}: {}",
-                user_id.user_id,
-                binding.cluster_dns_name,
-                e
-            );
-            Err(StatusCode::BAD_GATEWAY)
-        }
+    // A subdomain exists only if the remainder itself contains a dot
+    // (i.e. the full hostname has at least 3 segments).
+    if !first.is_empty() && rest.contains('.') {
+        Some(first)
+    } else {
+        None
     }
-} 
+}
+
+/// Helper to create a peer pointing at the local Axum UI service.
+fn local_peer() -> Box<HttpPeer> {
+    Box::new(HttpPeer::new("127.0.0.1:3000", false, String::new()))
+}
+
+#[async_trait]
+impl ProxyHttp for WorkshopProxy {
+    type CTX = ();
+
+    fn new_ctx(&self) -> Self::CTX {
+        ()
+    }
+
+    async fn upstream_peer(
+        &self,
+        session: &mut Session,
+        _ctx: &mut Self::CTX,
+    ) -> Result<Box<HttpPeer>> {
+        let path = session.req_header().uri.path().to_string();
+        let query = session
+            .req_header()
+            .uri
+            .query()
+            .map(|q| format!("?{}", q))
+            .unwrap_or_default();
+
+        // ── Auth check ───────────────────────────────────────────────
+        let cookie_header = session
+            .req_header()
+            .headers
+            .get("Cookie")
+            .map(|v| v.to_str().unwrap_or_default())
+            .unwrap_or_default();
+
+        let user = if let Some(user) = auth::validate_cookie(cookie_header) {
+            user
+        } else {
+            // Unauthenticated: allow login page and static assets through,
+            // redirect everything else to login.
+            if path == "/workshop-login"
+                || path.starts_with("/public")
+                || path.starts_with("/assets")
+                || path == "/health"
+            {
+                return Ok(local_peer());
+            } else {
+                session
+                    .req_header_mut()
+                    .set_uri(Uri::from_static("/workshop-login"));
+                return Ok(local_peer());
+            }
+        };
+
+        // ── Subdomain routing ────────────────────────────────────────
+        let host = session
+            .req_header()
+            .headers
+            .get("host")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+
+        if let Some(workshop_name) = extract_subdomain(host) {
+            let orchestrator = crate::orchestrator().await;
+
+            let local_error_path = match orchestrator
+                .get_or_create_pod(&user.user_id, workshop_name)
+                .await
+            {
+                Ok(upstream_url) => {
+                    // Forward the request to the workshop pod with the
+                    // original path + query intact (no rewriting needed).
+                    tracing::info!(
+                        upstream_url,
+                        path,
+                        user.user_id,
+                        workshop_name,
+                        "Routing subdomain to workshop pod"
+                    );
+                    return Ok(Box::new(HttpPeer::new(
+                        upstream_url,
+                        false,
+                        String::new(),
+                    )));
+                }
+                Err(HubError::PodLimitReached) => {
+                    Some(format!("/workshop-at-capacity/{}", workshop_name))
+                }
+                Err(HubError::PodNotReady) => {
+                    Some(format!("/workshop-pending/{}", workshop_name))
+                }
+                Err(HubError::Error(error)) => {
+                    let encoded_error = serde_urlencoded::to_string([("message", error)])
+                        .unwrap_or_default();
+                    Some(format!(
+                        "/workshop-error/{}?{}",
+                        workshop_name, encoded_error
+                    ))
+                }
+                Err(HubError::WorkshopNotFound) => Some("/error-404".to_string()),
+            };
+
+            // Error state — redirect to the local Axum error page
+            if let Some(error_path) = local_error_path {
+                let uri = match Uri::try_from(error_path) {
+                    Ok(uri) => uri,
+                    Err(_) => Uri::from_static("/workshop-error"),
+                };
+                session.req_header_mut().set_uri(uri);
+                return Ok(local_peer());
+            }
+        }
+
+        // ── Hub UI (bare domain) ─────────────────────────────────────
+        // No subdomain → serve the hub UI (index, login, static assets, etc.)
+        if path == "/" {
+            let index_uri = Uri::from_str(&format!("/index{}", query))
+                .unwrap_or_else(|_| Uri::from_static("/index"));
+            session.req_header_mut().set_uri(index_uri);
+        }
+
+        Ok(local_peer())
+    }
+}
+

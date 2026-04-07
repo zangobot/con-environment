@@ -4,10 +4,12 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    # For rust
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # For the images and install
     nixos-generators = {
       url = "github:nix-community/nixos-generators";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -15,12 +17,19 @@
     # For generating the talos cilium patch.
     nix-kube-generators.url = "github:farcaller/nix-kube-generators";
 
+    # For the development environment
     process-compose-flake = {
       url = "github:Platonic-Systems/process-compose-flake";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     services-flake = {
       url = "github:juspay/services-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # For secrets management
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -55,6 +64,7 @@
         modules = [
           ./nix/nas/configuration.nix
         ];
+        
       };
 
       perSystem = { config, self', pkgs, system, lib, ... }:
@@ -82,6 +92,7 @@
           commonNativeBuildInputs = with pkgs; [
             pkg-config
             openssl
+            cmake
           ];
 
           binaries = {
@@ -133,13 +144,22 @@
               cargoLock.lockFile = ./Cargo.lock;
 
               buildInputs = commonBuildInputs;
-              nativeBuildInputs = commonNativeBuildInputs;
+              nativeBuildInputs = commonNativeBuildInputs ++ [ pkgs.makeWrapper ];
               buildAndTestSubdir = "crates/inspector";
               env = {
                 LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath [ pkgs.openssl ]}";
               };
               cargoBuildFlags = [ "-p" "inspector" ];
               doCheck = false;
+
+              postInstall = ''
+                wrapProgram $out/bin/inspector \
+                  --prefix PATH : ${pkgs.lib.makeBinPath [
+                    pkgs.util-linux   # lsblk, wipefs, partprobe
+                    pkgs.gptfdisk     # sgdisk
+                    pkgs.coreutils    # sync
+                  ]}
+              '';
 
               meta = with lib; {
                 mainProgram = "inspector";
@@ -172,6 +192,7 @@
         {
           process-compose."default" = dev_shell.environment;
           devShells.default = dev_shell.shell;
+          devShells."con" = dev_shell.conShell;
           packages = binaries // {
             nas-installer-iso = inputs.nixos-generators.nixosGenerate {
               inherit system;

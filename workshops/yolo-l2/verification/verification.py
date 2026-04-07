@@ -7,29 +7,56 @@ import os
 app = Flask(__name__)
 
 # --- CONFIG ---
-FLAG = os.environ("FLAG", "ChristianSzegedy")
-SOURCE_IMAGE_PATH = os.environ("SOURCE_IMAGE_PATH", "source_image.jpg")
-L2_THRESHOLD = os.environ("L2_THRESHOLD", 50.0 )
-ORIGINAL_CLASS_ID = os.environ("ORIGINAL_CLASS_ID", 0)
+FLAG = os.environ.get("FLAG", "flag{ChristianSzegedy_Is_Proud}")
+SOURCE_IMAGE_PATH = os.environ.get("SOURCE_IMAGE_PATH", "nika.png")
+L2_THRESHOLD = float(os.environ.get("L2_THRESHOLD", 50.0))
 
-# Load resources once on startup
+# OPTIONAL: Set this to force a targeted attack (e.g. make the model see a toaster)
+# If not set, the default behavior is just to "break" the classification (untargeted).
+raw_target = os.environ.get("TARGET_CLASS")
+TARGET_CLASS = raw_target if raw_target is not None else None
+
 print("Loading Model and Reference Image...")
-model = YOLO("YOLO11n-cls.pt") 
-ref_img = Image.open(SOURCE_IMAGE_PATH).convert("RGB")
-REF_IMG_ARRAY = np.array(ref_img, dtype=np.float32)
-REF_SHAPE = REF_IMG_ARRAY.shape
+model = YOLO("yolo11n-cls.pt") 
+
+def top_class(results):
+    r = results[0]
+    top_idx = int(r.probs.top1)
+    conf = float(r.probs.top1conf)
+    class_name = r.names[top_idx]
+    return (class_name, conf)
+
+try:
+    ref_img = Image.open(SOURCE_IMAGE_PATH).convert("RGB")
+    REF_IMG_ARRAY = np.array(ref_img, dtype=np.float32)
+    REF_SHAPE = REF_IMG_ARRAY.shape
+    print(f"Reference Loaded: {REF_SHAPE}")
+    results = model(ref_img)
+    r = results[0]
+    ORIGINAL_CLASS_ID = int(r.probs.top1)
+    ORIGINAL_CLASS =class_name = r.names[ORIGINAL_CLASS_ID]
+    if TARGET_CLASS is not None:
+        print(f"⚠️  MODE: Targeted Attack -> Must reach Class ID {TARGET_CLASS}")
+    else:
+        print(f"⚠️  MODE: Untargeted Attack -> Must escape Class ID {ORIGINAL_CLASS_ID}")
+
+except Exception as e:
+    print(f"CRITICAL ERROR: Could not load source image {SOURCE_IMAGE_PATH}: {e}")
+    exit(1)
+
+
+
 print("Ready.")
 
 @app.route('/verify', methods=['POST'])
 def verify():
-    # 1. Receive Image via API
     if 'image' not in request.files:
         return jsonify({"success": False, "message": "No image file provided"}), 400
     
     file = request.files['image']
     
     try:
-        # Load user image directly from memory
+        # 1. Load User Image
         user_img = Image.open(file.stream).convert("RGB")
         user_img_array = np.array(user_img, dtype=np.float32)
 
@@ -42,7 +69,7 @@ def verify():
 
         # 3. Check L2 Constraint
         diff = user_img_array - REF_IMG_ARRAY
-        l2_distance = float(np.linalg.norm(diff)) # Convert to float for JSON serialization
+        l2_distance = float(np.linalg.norm(diff)) 
 
         if l2_distance > L2_THRESHOLD:
             return jsonify({
@@ -53,39 +80,53 @@ def verify():
         # 4. Check Classification
         results = model(user_img, verbose=False) 
         
-        detected_original = False
-        detected_classes = []
+        # Extract top prediction
+        r = results[0]
+        if hasattr(r, 'probs') and r.probs is not None:
+            top_class_id = int(r.probs.top1)
+            class_name = r.names[top_class_id]
+            top_conf = float(r.probs.top1conf)
+        else:
+            return jsonify({"success": False, "message": "Server Error: Model is not a classifier."}), 500
         
-        # Check all detections
-        for r in results:
-            for box in r.boxes:
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                detected_classes.append(cls_id)
-                if cls_id == ORIGINAL_CLASS_ID:
-                    detected_original = True
-        
-        # 5. Result Logic
-        if not detected_original:
-            # Success! Read flag
-            with open(FLAG_PATH, "r") as f:
-                flag = f.read().strip()
+        # 5. Determine Win Condition
+        attack_success = False
+        fail_message = ""
+
+        if TARGET_CLASS is not None:
+            # Targeted Attack Logic
+            if top_class_id == TARGET_CLASS:
+                attack_success = True
+            else:
+                fail_message = f"Target Class {TARGET_CLASS} not reached. Got Class {class_name}."
+        else:
+            # Untargeted Attack Logic (Default)
+            if top_class_id != ORIGINAL_CLASS_ID:
+                attack_success = True
+            else:
+                fail_message = f"Object (Class {ORIGINAL_CLASS}) still detected."
+
+        # 6. Return Response
+        if attack_success:
             return jsonify({
                 "success": True,
                 "message": "Adversarial Attack Successful!",
                 "l2_distance": l2_distance,
-                "flag": flag
+                "flag": FLAG,
+                "predicted_class": class_name,
+                "confidence": top_conf
             })
         else:
             return jsonify({
                 "success": False,
-                "message": f"Object (Class {ORIGINAL_CLASS_ID}) still detected.",
+                "message": fail_message,
                 "l2_distance": l2_distance,
-                "detected_classes": detected_classes
+                "predicted_class": class_name,
+                "confidence": top_conf
             }), 200
 
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
+        return jsonify({"success": False, "message": f"Server Error: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

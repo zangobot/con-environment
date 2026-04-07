@@ -5,136 +5,76 @@ let
   inherit (inputs) nix-kube-generators;
   kubelib = nix-kube-generators.lib { inherit pkgs; };
 
-  rustToolchain = with fenix.packages.${system}; combine [ 
-    stable.toolchain
-    targets.wasm32-unknown-unknown.stable.rust-std
+  rustToolchain = fenix.packages.${system}.stable.toolchain;
+
+  isDarwin = pkgs.stdenv.isDarwin;
+  isLinux = pkgs.stdenv.isLinux;
+
+  mkContainerScripts = import ./container_scripts.nix { 
+    inherit pkgs; 
+  };
+
+  talosConfigs = import ./talos-config.nix { 
+    inherit pkgs inputs; 
+    lib = pkgs.lib;
+    clusterName = "aivProd";
+    talosVersion = "v1.12.1";
+    vIp = "10.211.0.20";
+    nfsServer = "10.211.0.10";
+    mainPath = "/mnt/data/dynamic-pvc";
+    vllmPath = "/mnt/data/model-store";
+  };
+  
+  talosPxe = import ./nas/talos-image.nix { 
+    inherit pkgs; 
+  } {
+    version = "v1.12.1";
+    platform = "metal";
+    arch = "amd64";
+    systemExtensions = [
+      "siderolabs/amd-ucode"
+      "siderolabs/intel-ucode"
+      "siderolabs/nvidia-container-toolkit-lts"
+      "siderolabs/nvidia-open-gpu-kernel-modules-lts"
+    ];
+    sha256 = "sha256-ctKKY9stHhMosgyKCDWQVMzOxv0wPnqsRitZlkhxYpY=";
+
+    # sha256 = pkgs.lib.fakeHash;
+
+    diskImage = "pxe-assets";
+  };
+
+  myContainerScripts = mkContainerScripts [
+    # Standard Dockerfile builds (type="docker" is default)
+    {
+      name = "yolo-l2-notebook";
+      path = "workshops/yolo-l2/notebook";
+    }
+    {
+      name = "yolo-l2-verification";
+      path = "workshops/yolo-l2/verification";
+    }
+    {
+      name = "email-indirect-service";
+      path = "workshops/email-indirect/service";
+    }
+    {
+      name = "email-indirect-user";
+      path = "workshops/email-indirect/user";
+    }
+
+    # Nix builds - core components
+    { 
+      name = "workshop-sidecar"; 
+      path = "workshop-sidecar"; 
+      type = "nix"; 
+    }
+    { 
+      name = "workshop-hub"; 
+      path = "workshop-hub"; 
+      type = "nix"; 
+    }
   ];
-
-  # Common preamble for all scripts
-  scriptPreamble = ''
-    #!/usr/bin/env bash
-    set -euo pipefail # Exit on error, unset variables, and pipe failures
-    
-    # This script assumes it's run from within the dev shell.
-    # The shellHook is expected to have already set:
-    # - GITHUB_USERNAME (from .envhost)
-    # - PROJECT_ROOT
-    # - And already run `docker login` for ghcr.io
-
-    if [[ -z "''${PROJECT_ROOT:-}" ]]; then
-      echo "Error: PROJECT_ROOT is not set. Are you in the dev shell?"
-      exit 1
-    fi
-  '';
-
-  # --- Script 1: Upload workshop-sidecar (Nix build) ---
-  uploadSidecarScript = pkgs.writeShellScriptBin "upload-workshop-sidecar" ''
-    ${scriptPreamble}
-    
-    nix_pkg="workshop-sidecar"
-    docker_name="workshop-sidecar"
-    
-    local_tag="''${docker_name}:latest"
-    remote_tag="ghcr.io/nbhdai/''${docker_name}:latest"
-    result_link="result-''${nix_pkg}" # Unique out-link for the build
-
-    echo "--- Processing image: ''${docker_name} ---"
-    
-    echo "Building ''${nix_pkg}..."
-    nix build "''${PROJECT_ROOT}#''${nix_pkg}" --out-link "''${result_link}"
-    
-    echo "Loading ''${local_tag} into Docker..."
-    docker load < "''${result_link}"
-    
-    echo "Tagging ''${local_tag} as ''${remote_tag}..."
-    docker tag "''${local_tag}" "''${remote_tag}"
-    
-    echo "Pushing ''${remote_tag}..."
-    docker push "''${remote_tag}"
-    
-    rm "''${result_link}"
-    echo "Successfully pushed ''${remote_tag}"
-    echo "-----------------------------------"
-  '';
-
-  # --- Script 2: Upload workshop-hub (Nix build) ---
-  uploadHubScript = pkgs.writeShellScriptBin "upload-workshop-hub" ''
-    ${scriptPreamble}
-    
-    nix_pkg="workshop-hub"
-    docker_name="workshop-hub"
-    
-    local_tag="''${docker_name}:latest"
-    remote_tag="ghcr.io/nbhdai/''${docker_name}:latest"
-    result_link="result-''${nix_pkg}"
-
-    echo "--- Processing image: ''${docker_name} ---"
-    
-    echo "Building ''${nix_pkg}..."
-    nix build "''${PROJECT_ROOT}#''${nix_pkg}" --out-link "''${result_link}"
-    
-    echo "Loading ''${local_tag} into Docker..."
-    docker load < "''${result_link}"
-    
-    echo "Tagging ''${local_tag} as ''${remote_tag}..."
-    docker tag "''${local_tag}" "''${remote_tag}"
-    
-    echo "Pushing ''${remote_tag}..."
-    docker push "''${remote_tag}"
-    
-    rm "''${result_link}"
-    echo "Successfully pushed ''${remote_tag}"
-    echo "-----------------------------------"
-  '';
-
-  # --- Script 3: Upload workshop-inspect-basic (Dockerfile build) ---
-  uploadInspectScript = pkgs.writeShellScriptBin "upload-workshop-inspect-basic" ''
-    ${scriptPreamble}
-
-    echo "--- Processing image: workshop-inspect-basic ---"
-    
-    INSPECT_LOCAL_TAG="workshop-inspect-basic:latest"
-    INSPECT_REMOTE_TAG="ghcr.io/nbhdai/workshop-inspect-basic:latest"
-    INSPECT_CONTEXT_PATH="$PROJECT_ROOT/workshops/inspect-basic"
-
-    echo "Building $INSPECT_LOCAL_TAG from $INSPECT_CONTEXT_PATH..."
-    docker build -t "$INSPECT_LOCAL_TAG" "$INSPECT_CONTEXT_PATH"
-    
-    echo "Tagging $INSPECT_LOCAL_TAG as $INSPECT_REMOTE_TAG..."
-    docker tag "$INSPECT_LOCAL_TAG" "$INSPECT_REMOTE_TAG"
-    
-    echo "Pushing $INSPECT_REMOTE_TAG..."
-    docker push "$INSPECT_REMOTE_TAG"
-    
-    echo "Successfully pushed $INSPECT_REMOTE_TAG"
-    echo "-----------------------------------"
-  '';
-
-  # --- Script 4: Complete script to run all 3 ---
-  uploadAllScript = pkgs.writeShellScriptBin "upload-all-images" ''
-    #!/usr/bin/env bash
-    set -euo pipefail
-    
-    echo "=== 🚀 Starting upload for all images... ==="
-    
-    # These scripts are on the PATH from the dev shell's 'packages'
-    
-    echo ""
-    echo "Running upload-workshop-sidecar..."
-    upload-workshop-sidecar
-    
-    echo ""
-    echo "Running upload-workshop-hub..."
-    upload-workshop-hub
-    
-    echo ""
-    echo "Running upload-workshop-inspect-basic..."
-    upload-workshop-inspect-basic
-    
-    echo ""
-    echo "=== ✅ All images pushed successfully! ==="
-  '';
-
 
   cliTools = with pkgs; [
     curl
@@ -147,24 +87,12 @@ let
     k9s
     cilium-cli
     hubble
-    # Replaced uploadScript with the new individual and composite scripts
-    uploadSidecarScript
-    uploadHubScript
-    uploadInspectScript
-    uploadAllScript
-  ] ++ [ rustToolchain ];
+    sops
+    ssh-to-age
+  ] ++ myContainerScripts ++ [ rustToolchain talosConfigs talosPxe ];
 in
 {
-  shell = 
-    let
-    
-    # Environment variables that need to be loaded from a dotfile.
-    dotenv = ''
-
-    '';
-    
-    in
-    pkgs.mkShell {
+  shell = pkgs.mkShell {
       name = "aiv-k8-dev";
 
       # The packages available in the development environment
@@ -172,14 +100,25 @@ in
 
       # Setup hook that prepares environment and config files
       shellHook = ''
+        ${if isDarwin then ''
+          # macOS-specific configuration
+          unset DEVELOPER_DIR
+        '' else ""}
+
         # Set up environment variables
         export PROJECT_ROOT=$PWD
         export DATA_DIR="$PROJECT_ROOT/.data"
-        echo "Writing .env file..."
-        cat > .env <<EOF
-        ${dotenv}
-        EOF
 
+        if [ -f .envhost ]; then
+          set -a
+          source .envhost
+          set +a
+          if [ -n "$GITHUB_USERNAME" ] && [ -n "$GHCR_PAT" ]; then
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
+          fi
+        fi
+        # Todo: move this elsewhere
         export TALOS_VERSION="v1.11.0"
         export KUBECONFIG="$DATA_DIR/talos/kubeconfig"
         export TALOSCONFIG="$DATA_DIR/talos/talosconfig"
@@ -192,12 +131,46 @@ in
       '';
   };
 
+  conShell = pkgs.mkShell {
+      name = "aiv-k8-dev";
+
+      # The packages available in the development environment
+      packages = cliTools;
+
+      # Setup hook that prepares environment and config files
+      shellHook = ''
+        ${if isDarwin then ''
+          # macOS-specific configuration
+          unset DEVELOPER_DIR
+        '' else ""}
+
+        # Set up environment variables
+        export PROJECT_ROOT=$PWD
+        export DEPLOYMENT_DIR="$PROJECT_ROOT/deployment"
+
+        if [ -f .envhost ]; then
+          set -a
+          source .envhost
+          set +a
+          if [ -n "$GITHUB_USERNAME" ] && [ -n "$GHCR_PAT" ]; then
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
+          fi
+        fi
+        # Todo: move this elsewhere
+        export TALOS_VERSION="v1.12.1"
+        export KUBECONFIG="$DEPLOYMENT_DIR/talos/kubeconfig"
+        export TALOSCONFIG="$DEPLOYMENT_DIR/talos/talosconfig"
+        export TALOS_STATE_DIR="$DEPLOYMENT_DIR/talos"
+        export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.openssl ]}:$LD_LIBRARY_PATH"
+      '';
+  };
+
   environment = {
     imports = [
       inputs.services-flake.processComposeModules.default
       (multiService ./dev_shell/tilt.nix)
       (multiService ./dev_shell/local_path_storage.nix)
-      (multiService ./dev_shell/ceph.nix)
       (multiService ./dev_shell/talos.nix)
       (multiService ./dev_shell/patches.nix)
       (multiService ./dev_shell/container_repository.nix)
@@ -268,19 +241,11 @@ in
           ];
           # This is defined in the .envrc. These can't be paths as they're not checked in.
           configPatches = [
-            #".data/talos-patches/cilium.yaml"
+            ".data/talos-patches/cilium.yaml"
             ".data/talos-patches/ghcr.yaml"
           ];
         };
       };
-
-      # Virtual cluster doesn't handle ceph well.
-
-      # ceph."storage" = {
-      #   enable = true;
-      #   kubeconfig = ".data/talos/kubeconfig";
-      #   configDir = ../setup/k8/rook-ceph;
-      # };
 
       local_path_storage."storage" = {
         enable = true;
@@ -308,7 +273,7 @@ in
       k8s.condition = "process_started";
       gcr.condition = "process_started";
       ghcr.condition = "process_started";
-      # patch0.condition = "process_completed_successfully";
+      patch0.condition = "process_completed_successfully";
     };
     settings.processes.storage.depends_on = {
       cluster.condition = "process_log_ready";

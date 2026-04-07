@@ -1,9 +1,9 @@
 use axum::extract::State;
 use axum::{routing::get, Json, Router};
 use serde::Serialize;
-use tower_http::trace::TraceLayer;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tower_http::trace::TraceLayer;
 
 use crate::{config::Config, AppState};
 

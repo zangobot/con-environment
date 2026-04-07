@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: yolo-notebook-dev
+  namespace: default
+  labels:
+    app: yolo-notebook
+spec:
+  containers:
+    - name: notebook
+      image: workshop-yolo-l2-notebook
+      imagePullPolicy: Always
+      ports:
+        - containerPort: 5000
+      resources:
+        limits:
+          memory: "2Gi"
+          cpu: "4"
+        requests:
+          memory: "1Gi"
+          cpu: "2"
+      env:
+        - name: VERIFICATION_SERVER_UNTARGETED
+          value: http://workshop-yolo-l2-verification:5000/verify
+        - name: VERIFICATION_SERVER_TARGETED
+          value: http://workshop-yolo-l2-target-verification:5000/verify
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yolo-notebook-dev
+  namespace: default
+spec:
+  type: NodePort
+  selector:
+    app: yolo-notebook
+  ports:
+    - port: 5000
+      targetPort: 5000
+      nodePort: 30888
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workshop-yolo-l2-verification
+  namespace: default
+  labels:
+    app: workshop-yolo-l2-verification
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workshop-yolo-l2-verification
+  template:
+    metadata:
+      labels:
+        app: workshop-yolo-l2-verification
+    spec:
+      containers:
+        - name: verification
+          image: workshop-yolo-l2-verification
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: L2_THRESHOLD
+              value: "50.0"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workshop-yolo-l2-verification
+  namespace: default
+spec:
+  selector:
+    app: workshop-yolo-l2-verification
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workshop-yolo-l2-target-verification
+  namespace: default
+  labels:
+    app: workshop-yolo-l2-target-verification
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workshop-yolo-l2-target-verification
+  template:
+    metadata:
+      labels:
+        app: workshop-yolo-l2-target-verification
+    spec:
+      containers:
+        - name: verification
+          image: workshop-yolo-l2-verification
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: L2_THRESHOLD
+              value: "50.0"
+            - name: TARGET_CLASS
+              value: gibbon
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workshop-yolo-l2-target-verification
+  namespace: default
+spec:
+  selector:
+    app: workshop-yolo-l2-target-verification
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000

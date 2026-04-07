@@ -35,7 +35,6 @@ impl Config {
         }
         envy::prefixed("SIDECAR_").from_env::<Config>()
     }
-
 }
 
 impl fmt::Display for Config {
@@ -51,7 +50,6 @@ impl fmt::Display for Config {
         )
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -72,7 +70,7 @@ mod tests {
         // Set up a complete and valid set of environment variables
         // We must set all required fields (http_listen, tcp_listen)
         // and exactly one target field (target_tcp or target_uds).
-        
+
         let expected_http_addr = "127.0.0.1:8080";
         let expected_tcp_addr = "0.0.0.0:8888";
         let expected_target = "10.0.0.1:9000";
@@ -80,14 +78,14 @@ mod tests {
         env::set_var("SIDECAR_HTTP_LISTEN", expected_http_addr);
         env::set_var("SIDECAR_TCP_LISTEN", expected_tcp_addr);
         env::set_var("SIDECAR_TARGET_TCP", expected_target);
-        
+
         // Ensure the conflicting variable is not set
         env::remove_var("SIDECAR_TARGET_UDS");
 
         // --- Act ---
         // Call the function we are testing
         let config = Config::from_env().expect("Failed to load config from env");
-        
+
         // We should also test our validation logic
         config.validate().expect("Config validation failed");
 
@@ -99,7 +97,7 @@ mod tests {
         assert_eq!(config.tcp_listen, expected_tcp_addr);
         assert_eq!(config.target_tcp, Some(expected_target.to_string()));
         assert_eq!(config.target_uds, None);
-        
+
         // --- Cleanup ---
         // It's good practice to unset the variables after the test
         env::remove_var("SIDECAR_HTTP_LISTEN");

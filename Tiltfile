@@ -4,7 +4,7 @@ load('ext://nix_flake', 'build_flake_image')
 
 allow_k8s_contexts('admin@talos-local')
 hostname = os.getenv("HOSTNAME", "localhost")
-default_registry('ghcr.io/aivillage')
+default_registry('ghcr.io/nbhdai')
 update_settings(max_parallel_updates=5)
 
 # ============================================================================
@@ -40,83 +40,80 @@ build_flake_image(
     ]
 )
 
-# Build Sidecar image using nix flake
-build_flake_image(
-    'workshop-sidecar',
-    '.',
-    'workshop-sidecar',
-    deps=[
-        './crates/sidecar/src',
-        './crates/sidecar/Cargo.toml',
-        './Cargo.lock',
-    ]
-)
-
-# Build Integration Tests image using nix flake
-build_flake_image(
-    'workshop-integration-tests',
-    '.',
-    'workshop-integration-tests',
-    deps=[
-        './crates/integration-tests/src',
-        './crates/integration-tests/Cargo.toml',
-        './Cargo.lock',
-    ]
-)
-
 # Deploy Hub infrastructure
-k8s_yaml('./setup/k8/workshop.yaml')
+k8s_yaml('./crates/hub/workshop.yaml')
 
 k8s_resource('workshop-hub',
     port_forwards='8080:8080',
     labels=['hub'],
-    resource_deps=['ai-proxy', 'workshop-redis'],
+    resource_deps=['ai-proxy'],
 )
 
 # # ============================================================================
 # # Workshop dev
 # # ============================================================================
 
-docker_build("workshop-inspect-basic", "./workshops/inspect-basic")
-k8s_yaml('./workshops/inspect-basic/tilt-service.yaml')
-
-k8s_resource('inspect-basic',
-    port_forwards='8085:8080',
-    labels=['hub'],
-    resource_deps=['ai-proxy', 'workshop-redis'],
+# yolo 
+k8s_yaml('workshops/yolo-l2/dev.yaml')
+docker_build(
+    'workshop-yolo-l2-notebook',
+    'workshops/yolo-l2/notebook',
+    dockerfile='workshops/yolo-l2/notebook/Dockerfile',
+    live_update=[
+        sync('workshops/yolo-l2/notebook', '/app'),
+    ]
+)
+docker_build(
+    'workshop-yolo-l2-verification',
+    'workshops/yolo-l2/verification',
+    dockerfile='workshops/yolo-l2/verification/Dockerfile',
+    live_update=[
+        sync('workshops/yolo-l2/verification', '/app'),
+    ]
+)
+k8s_resource(
+    'yolo-notebook-dev',
+    port_forwards=['8091:5000'],
+    labels=['yolo-l2']
+)
+k8s_resource(
+    'workshop-yolo-l2-target-verification',
+    labels=['yolo-l2']
+)
+k8s_resource(
+    'workshop-yolo-l2-verification',
+    labels=['yolo-l2']
 )
 
+# email
+k8s_yaml(
+    'workshops/email-indirect/dev.yaml'
+)
+docker_build(
+    'workshop-email-indirect-user',
+    'workshops/email-indirect/user',
+    dockerfile='workshops/email-indirect/user/Dockerfile',
+    live_update=[
+        sync('workshops/email-indirect/user', '/app'),
+    ]
+)
 
-# # ============================================================================
-# # Integration Tests Infrastructure
-# # ============================================================================
+docker_build(
+    'workshop-email-indirect-service',
+    'workshops/email-indirect/service',
+    dockerfile='workshops/email-indirect/service/Dockerfile',
+    live_update=[
+        sync('workshops/email-indirect/service', '/app'),
+    ]
+)
 
-# # Deploy integration tests (as a job that can be retriggered)
-# k8s_yaml('crates/integration-tests/config.yaml')
+k8s_resource(
+    'email-client-dev',
+    port_forwards=['8090:5000'],
+    labels=['email-indirect']
+)
 
-# # Make the integration tests retriggerable
-# k8s_resource('workshop-integration-tests',
-#     labels=['tests'],
-#     resource_deps=['workshop-hub'],
-#     trigger_mode=TRIGGER_MODE_MANUAL,  # Don't auto-run, trigger manually
-# )
-
-# # Add a button to run tests
-# local_resource(
-#     'run-integration-tests',
-#     labels=['tests'],
-#     cmd='kubectl delete job workshop-integration-tests -n default --ignore-not-found && kubectl apply -f integration-tests-job.yaml',
-#     resource_deps=['workshop-hub'],
-#     trigger_mode=TRIGGER_MODE_MANUAL,
-#     auto_init=False,
-# )
-
-# # Add a button to view test logs
-# local_resource(
-#     'test-logs',
-#     labels=['tests'],
-#     cmd='kubectl logs job/workshop-integration-tests -n default --tail=100 || echo "No logs available yet"',
-#     resource_deps=['workshop-integration-tests'],
-#     trigger_mode=TRIGGER_MODE_MANUAL,
-#     auto_init=False,
-# )
+k8s_resource(
+    'email-service',
+    labels=['email-indirect']
+)

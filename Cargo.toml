@@ -2,10 +2,10 @@
 members = [ 
     "crates/sidecar",
     "crates/hub",
-    "crates/integration-tests", "crates/inspector",
+    "crates/inspector",
 ]
 default-members = [
-     "crates/sidecar",
+    "crates/sidecar",
     "crates/hub",
 ]
 resolver = "2"

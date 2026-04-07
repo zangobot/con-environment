@@ -1,136 +1,57 @@
-use axum::{
-    Router, response::{Html, IntoResponse, Response}, routing::{get, post}
-};
-use hyper::StatusCode;
-use k8s_openapi::api::core::v1::Pod;
-use kube::Client;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::Duration;
-use tower_http::trace::TraceLayer;
-use tower_cookies::CookieManagerLayer;
+use pingora::prelude::*;
+use tokio::sync::OnceCell;
 
 // Project modules
 mod auth;
-mod config; // <-- Add config module
+mod config;
 mod error;
 mod gc;
 mod orchestrator;
 mod proxy;
+mod service;
 
 pub use error::HubError;
 
-use crate::{proxy::{workshop_index_handler, workshop_other_handler}};
+use crate::{gc::GarbageCollector, orchestrator::Orchestrator, service::AxumService};
 
+pub static ONCE: OnceCell<Orchestrator> = OnceCell::const_new();
+async fn orchestrator() -> &'static Orchestrator {
+    ONCE.get_or_init(|| async { Orchestrator::new().await })
+        .await
+}
 pub static SIDECAR: &'static str = "ghcr.io/nbhdai/workshop-sidecar:latest";
 
-/// Global application state shared across all handlers.
-#[derive(Clone)]
-pub struct AppState {
-    /// Client for talking to the Kubernetes API.
-    kube_client: Client,
-    /// HTTP client for proxying.
-    http_client: hyper_util::client::legacy::Client<
-        hyper_util::client::legacy::connect::HttpConnector,
-        http_body_util::Full<hyper::body::Bytes>,
-    >,
-    /// Hub configuration
-    config: Arc<config::Config>, // <-- Add config
-}
+fn main() {
+    tracing_subscriber::fmt::init();
+    let config = config::Config::from_env();
 
-async fn index() -> Result<Response, StatusCode> {
-    return Ok(Html(include_str!("default_index.html")).into_response());
-}
-
-#[tokio::main]
-async fn main() {
-    // Set up logging
-    tracing_subscriber::registry()
-        .with(fmt::layer().with_target(true))
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            "trace,tower_http=trace,fred=debug,h2=off,hyper=off,sqlx=off,tarpc=off,rustls=off".into()
-        }))
-        .init();
-
-    tracing::info!("Starting Workshop Hub...");
-
-    // --- 1. Initialize Kubernetes Client ---
-    let kube_client = Client::try_default()
-        .await
-        .expect("Failed to create Kubernetes client. Is KUBECONFIG set?");
-
-    // --- 3. Initialize Config ---
-    let config = Arc::new(config::Config::from_env().expect("Failed to load config from env"));
     tracing::info!("Config loaded: {:?}", config);
 
-    // --- 4. Initialize HTTP Proxy Client ---
-    let http_client =
-        hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-            .build_http();
+    let gc = GarbageCollector;
+    let service = AxumService::new();
 
-    // --- 5. Create AppState ---
-    let state = AppState {
-        kube_client: kube_client.clone(),
-        http_client,
-        config: config.clone(), // <-- Add config to state
-    };
+    let mut my_server = Server::new(None).unwrap();
+    my_server.bootstrap();
+    my_server.add_service(background_service("garbage_collector", gc));
+    my_server.add_service(service);
 
-    // --- 6. Spawn Garbage Collector ---
-    let gc_state = state.clone();
-    tokio::spawn(async move {
-        tracing::info!("Spawning Garbage Collector task.");
-        // Use the configured namespace for the GC
-        let pod_api = kube::Api::<Pod>::namespaced(
-            gc_state.kube_client.clone(),
-            &gc_state.config.workshop_namespace,
-        );
+    let proxy_logic = proxy::WorkshopProxy;
 
-        let mut interval = tokio::time::interval(Duration::from_secs(300)); // Every 5 mins
-        loop {
-            interval.tick().await;
-            tracing::info!("GC: Running cleanup...");
-            if let Err(e) = gc::cleanup_idle_pods(
-                &pod_api,
-                &gc_state.config.workshop_name,
-                gc_state.config.workshop_idle_seconds,
-            )
-            .await
-            {
-                tracing::error!("GC: Error during cleanup: {}", e);
-            }
-        }
-    });
+    let mut lb = http_proxy_service(&my_server.configuration, proxy_logic);
 
-    // --- 7. Define Routes ---
-    let app = Router::new()
-        .route("/workshop/", get(workshop_index_handler))
-        .route("/workshop/{*path}", get(workshop_other_handler))
-        // Apply auth requirement ONLY to these routes
-        .layer(auth::RequireAuthLayer {})
-        .route("/", get(index))
-                // Apply middleware layers (order matters!)
-        .merge(auth::auth_routes())
-        .layer(auth::CookieAuthLayer {})
-        .layer(CookieManagerLayer::new())
-        .route("/health", get(|| async { "OK" }))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+    // Bind to the PUBLIC port
+    lb.add_tcp("0.0.0.0:8080");
 
-    // --- 7. Run Server ---
-    let addr = SocketAddr::from(([0; 8], 8080));
-    tracing::info!("Hub listening on {}", addr);
+    my_server.add_service(lb);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
+    tracing::info!("Pingora Gateway listening on 0.0.0.0:8080");
+    my_server.run_forever();
 }
 
-// #[cfg(test)]
-// mod tests {
-//     pub mod gc;
-//     pub mod helpers;
-//     pub mod config;
-//     pub mod integration;
-// }
+#[cfg(test)]
+mod tests {
+    pub mod config;
+    pub mod gc;
+    pub mod helpers;
+    pub mod integration;
+}

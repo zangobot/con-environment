@@ -47,7 +47,7 @@ struct BlockDevice {
     model: Option<String>,
     transport: Option<String>,
     serial: Option<String>,
-    #[serde(skip_serializing)] 
+    #[serde(skip_serializing)]
     read_only: bool,
 }
 
@@ -80,7 +80,9 @@ fn run_inspect() {
     let mut sys = System::new_all();
     sys.refresh_all();
 
-    let cpu_model = sys.cpus().first()
+    let cpu_model = sys
+        .cpus()
+        .first()
         .map(|cpu| cpu.brand().to_string())
         .unwrap_or_else(|| "Unknown".to_string());
 
@@ -110,7 +112,7 @@ fn run_wipe(confirm: bool) {
     }
 
     println!("Starting Disk Wipe (Netboot Mode)...");
-    
+
     // In a netboot environment, we assume the OS is in RAM.
     // We wipe ALL physical read-write block devices.
     let devices = get_block_devices();
@@ -128,13 +130,17 @@ fn run_wipe(confirm: bool) {
         }
 
         // Safety: Skip obvious non-physical devices if lsblk categorized them as disk
-        if dev.name.starts_with("loop") || dev.name.starts_with("ram") || dev.name.starts_with("zram") {
+        if dev.name.starts_with("loop")
+            || dev.name.starts_with("ram")
+            || dev.name.starts_with("zram")
+        {
             println!("Skipping virtual device: /dev/{}", dev.name);
             continue;
         }
 
-        println!("Wiping /dev/{} ({}, {} bytes)...", 
-            dev.name, 
+        println!(
+            "Wiping /dev/{} ({}, {} bytes)...",
+            dev.name,
             dev.model.as_deref().unwrap_or("Unknown Model"),
             dev.size_bytes
         );
@@ -158,20 +164,26 @@ fn run_wipe(confirm: bool) {
                 println!("  -> Successfully wiped /dev/{}", dev.name);
             }
             (Ok(w), Ok(s)) => {
-                println!("  -> Warning: Issues encountered (wipefs: {}, sgdisk: {})", w, s);
+                println!(
+                    "  -> Warning: Issues encountered (wipefs: {}, sgdisk: {})",
+                    w, s
+                );
             }
             _ => {
-                eprintln!("  -> FATAL: Failed to execute wipe commands on /dev/{}", dev.name);
+                eprintln!(
+                    "  -> FATAL: Failed to execute wipe commands on /dev/{}",
+                    dev.name
+                );
             }
         }
     }
-    
+
     println!("Syncing disks...");
     let _ = Command::new("sync").status();
-    
+
     println!("Notifying kernel of partition changes...");
     let _ = Command::new("partprobe").status();
-    
+
     println!("Wipe complete.");
 }
 
@@ -239,7 +251,9 @@ fn get_block_devices() -> Vec<BlockDevice> {
             let output_str = String::from_utf8_lossy(&out.stdout);
             if let Ok(parsed) = serde_json::from_str::<LsblkOutput>(&output_str) {
                 // Filter specifically for "disk" type to ignore partitions/loops
-                parsed.blockdevices.into_iter()
+                parsed
+                    .blockdevices
+                    .into_iter()
                     .filter(|d| d.dev_type == "disk")
                     .map(|d| BlockDevice {
                         name: d.name,
@@ -271,17 +285,25 @@ fn get_network_devices() -> Vec<NetworkDevice> {
             let name = entry.file_name().to_string_lossy().to_string();
             let dev_path = entry.path();
 
-            if name == "lo" { continue; }
-            if !dev_path.join("device").exists() { continue; }
+            if name == "lo" {
+                continue;
+            }
+            if !dev_path.join("device").exists() {
+                continue;
+            }
 
             let mac_address = fs::read_to_string(dev_path.join("address"))
-                .unwrap_or_default().trim().to_string();
+                .unwrap_or_default()
+                .trim()
+                .to_string();
 
             let speed_mbps = fs::read_to_string(dev_path.join("speed"))
-                .ok().and_then(|s| s.trim().parse::<i64>().ok());
+                .ok()
+                .and_then(|s| s.trim().parse::<i64>().ok());
 
             let driver = fs::read_link(dev_path.join("device/driver"))
-                .ok().map(|p| p.file_name().unwrap().to_string_lossy().to_string());
+                .ok()
+                .map(|p| p.file_name().unwrap().to_string_lossy().to_string());
 
             devices.push(NetworkDevice {
                 name,
@@ -296,9 +318,7 @@ fn get_network_devices() -> Vec<NetworkDevice> {
 
 fn get_pci_devices() -> Vec<PciDevice> {
     // lspci -mm: "Slot" "Class" "Vendor" "Device"
-    let output = Command::new("lspci")
-        .arg("-mm")
-        .output();
+    let output = Command::new("lspci").arg("-mm").output();
 
     let mut devices = Vec::new();
 
