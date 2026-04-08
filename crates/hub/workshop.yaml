@@ -326,7 +326,7 @@ data:
       - name: "adv.exemples"
         image: "ghcr.io/nbhdai/workshop-adv-exemples-notebook:latest"
         description: "Adversarial EXEmples against AI-based AV"
-        port: 5555
+        port: 5000
         env:
           BASE_URL: "/workshop/adv-exemples"
       - name: "email-indirect"

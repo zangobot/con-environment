@@ -17,7 +17,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
  && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt goodware_strings.txt ./
+COPY requirements.txt goodware_strings.txt e2e_malware_evasion.ipynb ./
+
+# TODO: no load from ZOO, download pre-trained models already or find solution
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
     python -m pip install -r requirements.txt
@@ -39,13 +41,20 @@ RUN chown -R player:player /workspace
 
 USER player
 
-EXPOSE 5555
+EXPOSE 5000
 
-# Launch Jupyter Notebook
 CMD ["sh", "-c", "exec jupyter notebook \
     --ip=0.0.0.0 \
-    --port=5555 \
+    --port=5000 \
     --no-browser \
-    --NotebookApp.token='' \
-    --NotebookApp.password='' \
-    --NotebookApp.base_url=\"$BASE_URL\""]
+    --NotebookApp.token= \
+    --NotebookApp.password= \
+    --NotebookApp.base_url=\"advexemples\""]
+
+#CMD ["sh", "-c", "exec jupyter notebook \
+#    --ip=0.0.0.0 \
+#    --port=5555 \
+#    --no-browser \
+#    --NotebookApp.token= \
+#    --NotebookApp.password= \
+#    --NotebookApp.base_url=\"$BASE_URL\""]
