@@ -18,8 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt goodware_strings.txt e2e_malware_evasion.ipynb ./
-
-# TODO: no load from ZOO, download pre-trained models already or find solution
+COPY models ./models
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
     python -m pip install -r requirements.txt
