@@ -32,6 +32,7 @@ RUN git clone --depth=1 https://github.com/ytisf/theZoo.git && \
         h=$(sha256sum "$f" | cut -d' ' -f1); \
         mv "$f" "${MALWARE_SAMPLES}/$h.file"; \
     done && \
+    find "${MALWARE_SAMPLES}" -mindepth 1 -type d -empty -delete && \
     rm -rf /workspace/theZoo
 
 # Create a non-root user (Standard practice for Jupyter)
